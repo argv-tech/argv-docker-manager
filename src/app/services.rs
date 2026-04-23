@@ -8,6 +8,7 @@ use crate::app::state::App;
 use crate::docker::client::DockerClient;
 use crate::docker::compose::ComposeProject;
 use crate::docker::daemon;
+use crate::docker::events::{append_project_event, append_project_runtime_details};
 use crate::docker::process::{run_stream, run_stream_with_line_callback};
 use crate::status::{Status, ToastState};
 
@@ -34,7 +35,7 @@ impl App {
         });
 
         if !self.docker_daemon_running {
-            self.event_listener_running = false;
+            self.stop_event_listeners();
             for service in &mut self.services {
                 *service.status.lock().unwrap() = Status::DaemonNotRunning;
                 *service.pull_progress.lock().unwrap() = None;
@@ -127,9 +128,12 @@ impl App {
 
             *service.status.lock().unwrap() = Status::Pulling;
             *service.pull_progress.lock().unwrap() = Some("queued".to_string());
+            append_project_event(&service.events, &service_name, "start requested");
+            append_project_event(&service.events, &service_name, "pulling images");
 
             let service_name_for_toast = service_name.clone();
             let logs = Arc::clone(&service.logs);
+            let events = Arc::clone(&service.events);
             let status = Arc::clone(&service.status);
             let pull_progress = Arc::clone(&service.pull_progress);
             let project = ComposeProject::new(service_name.clone());
@@ -145,24 +149,25 @@ impl App {
                 let mut skip_pull = false;
                 if let Ok(content) = fs::read_to_string(&compose_path)
                     && let Ok(compose) = serde_yaml::from_str::<serde_yaml::Value>(&content)
-                        && let Some(services) = compose.get("services").and_then(|s| s.as_mapping())
+                    && let Some(services) = compose.get("services").and_then(|s| s.as_mapping())
+                {
+                    let mut all_images_exist = true;
+                    for (_service_name, service_def) in services {
+                        if let Some(image) = service_def.get("image").and_then(|i| i.as_str())
+                            && !DockerClient::image_exists(image)
                         {
-                            let mut all_images_exist = true;
-                            for (_service_name, service_def) in services {
-                                if let Some(image) =
-                                    service_def.get("image").and_then(|i| i.as_str())
-                                    && !DockerClient::image_exists(image) {
-                                        all_images_exist = false;
-                                        break;
-                                    }
-                            }
-                            if all_images_exist {
-                                skip_pull = true;
-                                let mut logs_lock = logs.lock().unwrap();
-                                logs_lock.push_str("All images already present, skipping pull.\n");
-                                *pull_progress.lock().unwrap() = Some("cached".to_string());
-                            }
+                            all_images_exist = false;
+                            break;
                         }
+                    }
+                    if all_images_exist {
+                        skip_pull = true;
+                        let mut logs_lock = logs.lock().unwrap();
+                        logs_lock.push_str("All images already present, skipping pull.\n");
+                        *pull_progress.lock().unwrap() = Some("cached".to_string());
+                        append_project_event(&events, &service_name, "pull cached");
+                    }
+                }
 
                 let pull_success = if skip_pull {
                     true
@@ -182,10 +187,23 @@ impl App {
                         Some("Pull output:\n"),
                         Some(progress_callback),
                     ) {
-                        Ok(success) => success,
+                        Ok(true) => true,
+                        Ok(false) => {
+                            append_project_event(
+                                &events,
+                                &service_name,
+                                "pull failed: command exited with non-zero status",
+                            );
+                            false
+                        }
                         Err(e) => {
                             let mut logs_lock = logs.lock().unwrap();
                             logs_lock.push_str(&format!("Pull failed: {}\n", e));
+                            append_project_event(
+                                &events,
+                                &service_name,
+                                &format!("pull failed: {}", e),
+                            );
                             false
                         }
                     }
@@ -194,11 +212,14 @@ impl App {
                 if !pull_success {
                     *pull_progress.lock().unwrap() = None;
                     *status.lock().unwrap() = Status::Error;
+                    append_project_event(&events, &service_name, "error");
                     return;
                 }
 
                 *pull_progress.lock().unwrap() = None;
                 *status.lock().unwrap() = Status::Starting;
+                append_project_event(&events, &service_name, "pull complete");
+                append_project_event(&events, &service_name, "up requested");
 
                 match run_stream(
                     project.up_detached_cmd(),
@@ -209,17 +230,32 @@ impl App {
                         let actual_status = DockerClient::get_status(&service_name_for_status);
                         if actual_status == Status::Running {
                             *status.lock().unwrap() = Status::Running;
+                            append_project_event(&events, &service_name, "running confirmed");
+                            append_project_runtime_details(&events, &service_name);
+                        } else {
+                            *status.lock().unwrap() = Status::Error;
+                            append_project_event(
+                                &events,
+                                &service_name,
+                                "up completed but service not running",
+                            );
                         }
                     }
                     Ok(false) => {
                         let mut logs_lock = logs.lock().unwrap();
                         logs_lock.push_str("Up failed: command exited with non-zero status\n");
                         *status.lock().unwrap() = Status::Error;
+                        append_project_event(
+                            &events,
+                            &service_name,
+                            "up failed: command exited with non-zero status",
+                        );
                     }
                     Err(e) => {
                         let mut logs_lock = logs.lock().unwrap();
                         logs_lock.push_str(&format!("Up failed: {}\n", e));
                         *status.lock().unwrap() = Status::Error;
+                        append_project_event(&events, &service_name, &format!("up failed: {}", e));
                     }
                 }
             });
@@ -278,6 +314,7 @@ impl App {
 
             *service.status.lock().unwrap() = Status::Stopping;
             *service.pull_progress.lock().unwrap() = None;
+            append_project_event(&service.events, &service_name, "stop requested");
 
             *service.live_logs.lock().unwrap() = String::new();
             if let Some(mut child) = service.logs_child.lock().unwrap().take() {
@@ -286,8 +323,9 @@ impl App {
 
             let service_name_for_toast = service_name.clone();
             let logs = Arc::clone(&service.logs);
+            let events = Arc::clone(&service.events);
             let status = Arc::clone(&service.status);
-            let project = ComposeProject::new(service_name);
+            let project = ComposeProject::new(service_name.clone());
 
             thread::spawn(move || {
                 match run_stream(
@@ -297,16 +335,27 @@ impl App {
                 ) {
                     Ok(true) => {
                         *status.lock().unwrap() = Status::Stopped;
+                        append_project_event(&events, &service_name, "stopped confirmed");
                     }
                     Ok(false) => {
                         let mut logs_lock = logs.lock().unwrap();
                         logs_lock.push_str("Down failed: command exited with non-zero status\n");
                         *status.lock().unwrap() = Status::Error;
+                        append_project_event(
+                            &events,
+                            &service_name,
+                            "down failed: command exited with non-zero status",
+                        );
                     }
                     Err(e) => {
                         let mut logs_lock = logs.lock().unwrap();
                         logs_lock.push_str(&format!("Down failed: {}\n", e));
                         *status.lock().unwrap() = Status::Error;
+                        append_project_event(
+                            &events,
+                            &service_name,
+                            &format!("down failed: {}", e),
+                        );
                     }
                 }
             });
@@ -347,15 +396,16 @@ fn extract_pull_progress(line: &str) -> Option<String> {
     }
 
     if let Some((done, total)) = extract_size_ratio(rhs)
-        && total > 0.0 {
-            let phase = if rhs.contains("Extracting") {
-                "Extracting"
-            } else {
-                "Downloading"
-            };
-            let percent = ((done / total) * 100.0).round().clamp(0.0, 100.0) as u8;
-            return Some(format!("{} {}%", phase, percent));
-        }
+        && total > 0.0
+    {
+        let phase = if rhs.contains("Extracting") {
+            "Extracting"
+        } else {
+            "Downloading"
+        };
+        let percent = ((done / total) * 100.0).round().clamp(0.0, 100.0) as u8;
+        return Some(format!("{} {}%", phase, percent));
+    }
 
     for keyword in [
         "Waiting",

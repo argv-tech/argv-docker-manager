@@ -23,7 +23,8 @@ pub struct EventListenerHandle {
 
 impl EventListenerHandle {
     pub fn signal_shutdown(&mut self) {
-        self.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.shutdown
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -87,20 +88,24 @@ pub fn spawn_projects_listener(
 
 fn seed_initial_events(project_targets: &HashMap<String, ProjectEventTargets>) {
     for (project, target) in project_targets {
-        let containers = list_project_containers(project);
-        if containers.is_empty() {
-            continue;
-        }
+        append_running_snapshot(&target.events, project);
+    }
+}
 
-        for container_name in containers {
-            append_event_log(
-                &target.events,
-                project,
-                &container_name,
-                "running (snapshot)",
-            );
-            append_runtime_details(&target.events, &container_name);
-        }
+pub fn append_project_event(logs: &Arc<Mutex<String>>, project: &str, action: &str) {
+    append_event_log(logs, project, "", action);
+}
+
+pub fn append_running_snapshot(logs: &Arc<Mutex<String>>, project: &str) {
+    for container_name in list_project_containers(project) {
+        append_event_log(logs, project, &container_name, "running (snapshot)");
+        append_runtime_details(logs, &container_name);
+    }
+}
+
+pub fn append_project_runtime_details(logs: &Arc<Mutex<String>>, project: &str) {
+    for container_name in list_project_containers(project) {
+        append_runtime_details(logs, &container_name);
     }
 }
 
@@ -249,11 +254,7 @@ fn docker_inspect_field(container_name: &str, template: &str) -> Option<String> 
     }
 
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value)
-    }
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn normalize_whitespace(value: &str) -> String {
@@ -278,6 +279,10 @@ fn normalize_runtime_value(value: &str, fallback: &str) -> String {
 
 fn append_event_log(logs: &Arc<Mutex<String>>, project: &str, container_name: &str, action: &str) {
     let mut logs_lock = logs.lock().unwrap();
+    append_event_log_entry(&mut logs_lock, project, container_name, action);
+}
+
+fn append_event_log_entry(logs: &mut String, project: &str, container_name: &str, action: &str) {
     let scope = if container_name.is_empty() {
         project
     } else {
@@ -285,14 +290,72 @@ fn append_event_log(logs: &Arc<Mutex<String>>, project: &str, container_name: &s
     };
     let new_entry = format!("[event] {} {}\n", scope, action);
 
-    if logs_lock.len() + new_entry.len() > MAX_EVENT_LOG_SIZE {
-        let truncate_point = logs_lock.len().saturating_sub(MAX_EVENT_LOG_SIZE / 2);
+    if logs.len() + new_entry.len() > MAX_EVENT_LOG_SIZE {
+        let truncate_point = logs.len().saturating_sub(MAX_EVENT_LOG_SIZE / 2);
         if truncate_point > 0
-            && let Some(pos) = logs_lock[truncate_point..].find('\n')
+            && let Some(pos) = logs[truncate_point..].find('\n')
         {
-            logs_lock.drain(0..truncate_point + pos + 1);
+            logs.drain(0..truncate_point + pos + 1);
         }
     }
 
-    logs_lock.push_str(&new_entry);
+    logs.push_str(&new_entry);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn append_project_event_uses_project_scope() {
+        let logs = Arc::new(Mutex::new(String::new()));
+
+        append_project_event(&logs, "mailpit", "start requested");
+
+        assert_eq!(
+            logs.lock().unwrap().as_str(),
+            "[event] mailpit start requested\n"
+        );
+    }
+
+    #[test]
+    fn append_event_log_entry_uses_container_scope_when_available() {
+        let mut logs = String::new();
+
+        append_event_log_entry(&mut logs, "mailpit", "mailpit-1", "start");
+
+        assert_eq!(logs, "[event] mailpit-1 start\n");
+    }
+
+    #[test]
+    fn append_event_log_entry_truncates_old_entries() {
+        let mut logs = "old\n".repeat(MAX_EVENT_LOG_SIZE / 4 + 1_000);
+
+        append_event_log_entry(&mut logs, "mailpit", "", "updated");
+
+        assert!(logs.len() <= MAX_EVENT_LOG_SIZE);
+        assert!(logs.ends_with("[event] mailpit updated\n"));
+    }
+
+    #[test]
+    fn handle_event_line_updates_matching_project_status() {
+        let events = Arc::new(Mutex::new(String::new()));
+        let status = Arc::new(Mutex::new(Status::Running));
+        let pull_progress = Arc::new(Mutex::new(Some("queued".to_string())));
+        let mut targets = HashMap::new();
+        targets.insert(
+            "mailpit".to_string(),
+            ProjectEventTargets {
+                status: Arc::clone(&status),
+                events: Arc::clone(&events),
+                pull_progress: Arc::clone(&pull_progress),
+            },
+        );
+
+        handle_event_line("stop\tmailpit\tmailpit-1\t0", &targets);
+
+        assert!(matches!(*status.lock().unwrap(), Status::Stopped));
+        assert!(pull_progress.lock().unwrap().is_none());
+        assert_eq!(events.lock().unwrap().as_str(), "[event] mailpit-1 stop\n");
+    }
 }

@@ -92,10 +92,7 @@ fn logs_title(app: &App) -> Line<'static> {
 
     let mut spans = vec![
         Span::styled(" Logs ", Style::default().fg(Color::White)),
-        Span::styled(
-            selected_name.to_string(),
-            Style::default().fg(Color::Cyan),
-        ),
+        Span::styled(selected_name.to_string(), Style::default().fg(Color::Cyan)),
     ];
 
     spans.push(Span::styled("  |  ", Style::default().fg(Color::DarkGray)));
@@ -467,7 +464,7 @@ fn colorize_events(logs: String) -> Text<'static> {
                 continue;
             }
 
-            if let Some((scope, action)) = rest.rsplit_once(' ') {
+            if let Some((scope, action)) = rest.split_once(' ') {
                 lines.push(Line::from(vec![
                     Span::styled("[event] ", Style::default().fg(Color::DarkGray)),
                     Span::styled(
@@ -535,10 +532,20 @@ fn colorize_runtime_event(scope: &str, details: &str) -> Line<'static> {
 
 fn event_action_color(action: &str) -> Color {
     match action {
-        "start" | "running (snapshot)" | "health_status: healthy" => Color::Green,
-        "create" | "restart" | "unpause" => Color::Yellow,
+        "start"
+        | "running (snapshot)"
+        | "health_status: healthy"
+        | "pull cached"
+        | "pull complete"
+        | "running confirmed"
+        | "stopped confirmed" => Color::Green,
+        "create" | "restart" | "unpause" | "start requested" | "stop requested"
+        | "pulling images" | "up requested" => Color::Yellow,
         "stop" | "destroy" | "pause" | "die" => Color::Red,
         "kill" | "health_status: unhealthy" => Color::LightRed,
+        "error" => Color::LightRed,
+        action if action.contains("failed") => Color::LightRed,
+        action if action.contains("not running") => Color::LightRed,
         _ => Color::Gray,
     }
 }

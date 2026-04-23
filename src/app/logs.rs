@@ -29,14 +29,15 @@ impl App {
                             format!("containers/{}/docker-compose.yml", service_name);
                         let mut text = String::new();
                         if let Ok(content) = fs::read_to_string(&compose_path)
-                            && let Ok(compose) = serde_yaml::from_str::<Compose>(&content) {
-                                let services = compose.services.keys().cloned().collect::<Vec<_>>();
-                                let network = format!("{}_default", service_name);
-                                text = format!("Up output:\nNetwork {} Running\n", network);
-                                for svc in services {
-                                    text.push_str(&format!("Container {} Running\n", svc));
-                                }
+                            && let Ok(compose) = serde_yaml::from_str::<Compose>(&content)
+                        {
+                            let services = compose.services.keys().cloned().collect::<Vec<_>>();
+                            let network = format!("{}_default", service_name);
+                            text = format!("Up output:\nNetwork {} Running\n", network);
+                            for svc in services {
+                                text.push_str(&format!("Container {} Running\n", svc));
                             }
+                        }
                         let mut logs_lock = logs.lock().unwrap();
                         if logs_lock.is_empty() {
                             logs_lock.push_str(&text);

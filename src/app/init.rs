@@ -48,7 +48,8 @@ impl App {
 
         let mut app = Self {
             state: ratatui::widgets::ListState::default(),
-            services: service_names.into_iter().map(Service::new).collect(),
+            services: service_names.iter().cloned().map(Service::new).collect(),
+            service_names,
             toast,
             toast_timer,
 
@@ -72,6 +73,7 @@ impl App {
             event_listener_running: false,
             event_listener_handle: None,
             toast_tick_accumulator: 0,
+            logs_render_cache: Default::default(),
             keybinds,
         };
         app.refresh_statuses();

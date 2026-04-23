@@ -1,299 +1,53 @@
 use ratatui::{
-    Frame,
-    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::{App, Focus, LogTab};
-use crate::status::Status;
-
-pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
-    let logs_content = selected_logs(app);
-    let title = logs_title(app);
-    let border_color = if app.focus == Focus::Logs {
-        Color::Blue
-    } else {
-        Color::White
-    };
-
-    if app.log_auto_scroll {
-        let total_lines = logs_content.lines.len() as u16;
-        let visible_lines = area.height.saturating_sub(2);
-        app.log_scroll = total_lines.saturating_sub(visible_lines);
-    }
-
-    let logs_widget = Paragraph::new(logs_content)
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(border_color)),
-        )
-        .style(Style::default().fg(Color::Gray))
-        .scroll((app.log_scroll, 0));
-
-    frame.render_widget(logs_widget, area);
-}
-
-fn selected_logs(app: &App) -> Text<'static> {
-    if let Some(index) = app.state.selected() {
-        let service = &app.services[index];
-        match app.log_tab {
-            LogTab::Events => {
-                let logs = service.events.lock().unwrap().snapshot();
-                let status = service.status();
-                let pull_progress = service.pull_progress.lock().unwrap().clone();
-
-                let mut content = if logs.is_empty() {
-                    Text::from(vec![Line::from(vec![Span::styled(
-                        "No events yet - start the service to see events",
-                        Style::default().fg(Color::DarkGray),
-                    )])])
-                } else {
-                    colorize_events(logs)
-                };
-
-                if let Some(progress_line) =
-                    event_progress_line(&status, pull_progress.as_deref(), app.animation_tick)
-                {
-                    let mut lines = vec![progress_line, Line::from("")];
-                    lines.extend(content.lines);
-                    content = Text::from(lines);
-                }
-
-                content
-            }
-            LogTab::LiveLogs => {
-                let logs = service.live_logs.lock().unwrap().snapshot();
-                if logs.is_empty() {
-                    Text::from(vec![Line::from(vec![Span::styled(
-                        "No live logs yet - start the service to see logs",
-                        Style::default().fg(Color::DarkGray),
-                    )])])
-                } else {
-                    colorize_logs(logs)
-                }
-            }
-        }
-    } else {
-        Text::from("Select a service to view logs")
-    }
-}
-
-fn logs_title(app: &App) -> Line<'static> {
-    let selected_name = app
-        .state
-        .selected()
-        .and_then(|index| app.services.get(index))
-        .map(|service| service.name.clone())
-        .unwrap_or_else(|| "none".to_string());
-
-    let mut spans = vec![
-        Span::styled(" Logs ", Style::default().fg(Color::White)),
-        Span::styled(selected_name.to_string(), Style::default().fg(Color::Cyan)),
-    ];
-
-    spans.push(Span::styled("  |  ", Style::default().fg(Color::DarkGray)));
-    if app.log_tab == LogTab::Events {
-        spans.push(Span::styled(
-            "[Events]",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
-    } else {
-        spans.push(Span::styled("Events", Style::default().fg(Color::White)));
-    }
-
-    spans.push(Span::styled("  |  ", Style::default().fg(Color::DarkGray)));
-    if app.log_tab == LogTab::LiveLogs {
-        spans.push(Span::styled(
-            "[Live Logs]",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
-    } else {
-        spans.push(Span::styled("Live Logs", Style::default().fg(Color::White)));
-    }
-
-    if app.focus == Focus::Logs && app.log_auto_scroll {
-        spans.push(Span::styled(
-            " [AUTO]",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
-
-    Line::from(spans)
-}
-
-fn event_progress_line(
-    status: &Status,
-    pull_progress: Option<&str>,
-    tick: u64,
-) -> Option<Line<'static>> {
-    match status {
-        Status::Pulling => {
-            let progress = pull_progress.unwrap_or("in progress");
-            let bar = progress_bar(tick, parse_progress_percent(progress));
-            Some(Line::from(vec![
-                Span::styled("[progress] ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    format!("{}", status),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" [", Style::default().fg(Color::DarkGray)),
-                Span::styled(bar, Style::default().fg(Color::Cyan)),
-                Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled(progress.to_string(), Style::default().fg(Color::White)),
-                Span::styled(" ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    pulling_spinner(tick).to_string(),
-                    Style::default().fg(Color::Cyan),
-                ),
-            ]))
-        }
-        Status::Starting => {
-            let bar = progress_bar(tick, None);
-            Some(Line::from(vec![
-                Span::styled("[progress] ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "starting".to_string(),
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" [", Style::default().fg(Color::DarkGray)),
-                Span::styled(bar, Style::default().fg(Color::Yellow)),
-                Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    transition_spinner(tick).to_string(),
-                    Style::default().fg(Color::Yellow),
-                ),
-            ]))
-        }
-        Status::Stopping => {
-            let bar = progress_bar(tick, None);
-            Some(Line::from(vec![
-                Span::styled("[progress] ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    "stopping".to_string(),
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" [", Style::default().fg(Color::DarkGray)),
-                Span::styled(bar, Style::default().fg(Color::Red)),
-                Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled(
-                    transition_spinner(tick).to_string(),
-                    Style::default().fg(Color::Red),
-                ),
-            ]))
-        }
-        _ => None,
-    }
-}
-
-fn pulling_spinner(tick: u64) -> &'static str {
-    const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    SPINNER[((tick / 2) % SPINNER.len() as u64) as usize]
-}
-
-fn transition_spinner(tick: u64) -> &'static str {
-    const SPINNER: [&str; 8] = ["-", "\\", "|", "/", "-", "\\", "|", "/"];
-    SPINNER[(tick % SPINNER.len() as u64) as usize]
-}
-
-fn parse_progress_percent(progress: &str) -> Option<u8> {
-    let percent_pos = progress.find('%')?;
-    let prefix = &progress[..percent_pos];
-    let digits_reversed: String = prefix
-        .chars()
-        .rev()
-        .take_while(|ch| ch.is_ascii_digit())
-        .collect();
-
-    if digits_reversed.is_empty() {
-        return None;
-    }
-
-    let digits: String = digits_reversed.chars().rev().collect();
-    digits.parse::<u8>().ok().map(|percent| percent.min(100))
-}
-
-fn progress_bar(tick: u64, percent: Option<u8>) -> String {
-    const WIDTH: usize = 24;
-    const MARKER_WIDTH: usize = 5;
-
-    if let Some(percent) = percent {
-        let filled = (percent as usize * WIDTH) / 100;
-        return format!("{}{}", "#".repeat(filled), "-".repeat(WIDTH - filled));
-    }
-
-    let mut bar = vec!['-'; WIDTH];
-    let offset = (tick as usize) % (WIDTH + MARKER_WIDTH);
-    for i in 0..MARKER_WIDTH {
-        let idx = offset + i;
-        if idx < WIDTH {
-            bar[idx] = '#';
-        }
-    }
-
-    bar.into_iter().collect()
-}
-
-fn colorize_logs(logs: String) -> Text<'static> {
-    let mut lines = Vec::new();
+pub(super) fn colorize_logs(logs: &str) -> Text<'static> {
+    let mut lines = Vec::with_capacity(logs.lines().count());
 
     for raw_line in logs.lines() {
-        let line_str = raw_line.to_string();
-
-        if line_str.starts_with("Pull output:") {
+        if raw_line.starts_with("Pull output:") {
             lines.push(Line::from(vec![Span::styled(
                 "Pull output:",
                 Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
             )]));
-        } else if line_str.starts_with("Up output:") {
+        } else if raw_line.starts_with("Up output:") {
             lines.push(Line::from(vec![Span::styled(
                 "Up output:",
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
             )]));
-        } else if line_str.starts_with("Down output:") {
+        } else if raw_line.starts_with("Down output:") {
             lines.push(Line::from(vec![Span::styled(
                 "Down output:",
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             )]));
-        } else if line_str.contains("failed")
-            || line_str.contains("Failed")
-            || line_str.contains("error")
-            || line_str.contains("Error")
+        } else if raw_line.contains("failed")
+            || raw_line.contains("Failed")
+            || raw_line.contains("error")
+            || raw_line.contains("Error")
         {
             lines.push(Line::from(vec![Span::styled(
-                line_str,
+                raw_line.to_owned(),
                 Style::default().fg(Color::Red),
             )]));
-        } else if line_str.contains("success")
-            || line_str.contains("Success")
-            || line_str.contains("done")
-            || line_str.contains("Done")
+        } else if raw_line.contains("success")
+            || raw_line.contains("Success")
+            || raw_line.contains("done")
+            || raw_line.contains("Done")
         {
             lines.push(Line::from(vec![Span::styled(
-                line_str,
+                raw_line.to_owned(),
                 Style::default().fg(Color::Green),
             )]));
-        } else if line_str.trim().is_empty() {
+        } else if raw_line.trim().is_empty() {
             lines.push(Line::from(""));
         } else {
-            lines.push(colorize_runtime_log_line(&line_str));
+            lines.push(colorize_runtime_log_line(raw_line));
         }
     }
 
@@ -444,8 +198,8 @@ fn log_marker_color(marker: &str) -> Color {
     }
 }
 
-fn colorize_events(logs: String) -> Text<'static> {
-    let mut lines = Vec::new();
+pub(super) fn colorize_events(logs: &str) -> Text<'static> {
+    let mut lines = Vec::with_capacity(logs.lines().count());
 
     for raw_line in logs.lines() {
         if raw_line.trim().is_empty() {
@@ -647,7 +401,7 @@ fn compact_port_label(container_port: &str, host_binding: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::compact_port_label;
 
     #[test]
     fn compact_port_label_removes_protocol_and_matching_host_ip() {

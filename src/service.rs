@@ -11,6 +11,7 @@ pub type SharedLogBuffer = Arc<Mutex<LogBuffer>>;
 pub struct LogBuffer {
     text: String,
     max_bytes: usize,
+    revision: u64,
 }
 
 impl LogBuffer {
@@ -30,12 +31,17 @@ impl LogBuffer {
         Self {
             text: String::new(),
             max_bytes,
+            revision: 0,
         }
     }
 
     pub fn push_str(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
         self.text.push_str(text);
         self.truncate_front();
+        self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn push_line(&mut self, line: &str) {
@@ -44,7 +50,11 @@ impl LogBuffer {
     }
 
     pub fn clear(&mut self) {
+        if self.text.is_empty() {
+            return;
+        }
         self.text.clear();
+        self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -57,6 +67,10 @@ impl LogBuffer {
 
     pub fn snapshot(&self) -> String {
         self.as_str().to_owned()
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     fn truncate_front(&mut self) {
@@ -140,5 +154,18 @@ mod tests {
         assert!(buffer.as_str().len() <= 24);
         assert!(buffer.as_str().contains("new four"));
         assert!(!buffer.as_str().contains("old one"));
+    }
+
+    #[test]
+    fn log_buffer_revision_changes_when_content_changes() {
+        let mut buffer = LogBuffer::new(24);
+        let initial = buffer.revision();
+
+        buffer.push_line("new line");
+        let after_push = buffer.revision();
+        buffer.clear();
+
+        assert!(after_push > initial);
+        assert!(buffer.revision() > after_push);
     }
 }

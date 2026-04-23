@@ -38,8 +38,7 @@ impl App {
                 service.clear_pull_progress();
             }
         } else if self.first_status_check || daemon_changed || has_transitioning_services {
-            let service_names: Vec<String> = self.services.iter().map(|s| s.name.clone()).collect();
-            let batch_statuses = DockerClient::get_batch_statuses(&service_names);
+            let batch_statuses = DockerClient::get_batch_statuses(&self.service_names);
 
             for service in &self.services {
                 if let Some(actual_status) = batch_statuses.get(&service.name).copied() {
@@ -58,9 +57,7 @@ impl App {
                             }
                         }
                         Status::Stopping => {
-                            if actual_status == Status::Stopped
-                                && DockerClient::all_containers_stopped(&service.name)
-                            {
+                            if actual_status == Status::Stopped {
                                 service.clear_pull_progress();
                                 *status_lock = Status::Stopped;
                             }

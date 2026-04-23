@@ -3,6 +3,7 @@ use crate::docker::events::EventListenerHandle;
 use crate::service::Service;
 use crate::status::ToastState;
 use crate::toast::Toast;
+use ratatui::text::Text;
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Focus {
@@ -26,9 +27,30 @@ pub enum DaemonAction {
     Restart,
 }
 
+pub struct LogsRenderCache {
+    pub service_index: Option<usize>,
+    pub tab: LogTab,
+    pub buffer_revision: u64,
+    pub body: Text<'static>,
+    pub body_line_count: u16,
+}
+
+impl Default for LogsRenderCache {
+    fn default() -> Self {
+        Self {
+            service_index: None,
+            tab: LogTab::Events,
+            buffer_revision: 0,
+            body: Text::from(""),
+            body_line_count: 0,
+        }
+    }
+}
+
 pub struct App {
     pub state: ratatui::widgets::ListState,
     pub services: Vec<Service>,
+    pub service_names: Vec<String>,
     pub toast: Option<Toast>,
     pub toast_timer: u32,
 
@@ -52,6 +74,7 @@ pub struct App {
     pub event_listener_running: bool,
     pub event_listener_handle: Option<EventListenerHandle>,
     pub toast_tick_accumulator: u8,
+    pub logs_render_cache: LogsRenderCache,
     pub keybinds: Keybinds,
 }
 

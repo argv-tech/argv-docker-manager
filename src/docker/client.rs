@@ -90,28 +90,16 @@ impl DockerClient {
 
         let cmd = Command::new("docker")
             .arg("ps")
+            .arg("-a")
             .arg("--format")
-            .arg("{{.Names}}\t{{.Status}}\t{{.Label \"com.docker.compose.project\"}}")
+            .arg("{{.Status}}\t{{.Label \"com.docker.compose.project\"}}")
             .output();
 
         match cmd {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 for line in stdout.lines() {
-                    let parts: Vec<&str> = line.split('\t').collect();
-                    if parts.len() >= 3 {
-                        let status_str = parts[1];
-                        let project_name = parts[2];
-
-                        if service_name_set.contains(project_name) {
-                            let status = if status_str.starts_with("Up") {
-                                Status::Running
-                            } else {
-                                Status::Stopped
-                            };
-                            statuses.insert(project_name.to_owned(), status);
-                        }
-                    }
+                    apply_batch_status_line(&mut statuses, &service_name_set, line);
                 }
             }
             Err(_) => {
@@ -123,41 +111,59 @@ impl DockerClient {
 
         statuses
     }
+}
 
-    pub fn all_containers_stopped(project: &str) -> bool {
-        match Command::new("docker")
-            .arg("ps")
-            .arg("-a")
-            .arg("--filter")
-            .arg(format!("label=com.docker.compose.project={}", project))
-            .arg("--format")
-            .arg("{{.Status}}")
-            .output()
-        {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let statuses: Vec<&str> = stdout
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .collect();
+fn apply_batch_status_line(
+    statuses: &mut HashMap<String, Status>,
+    service_name_set: &HashSet<&str>,
+    line: &str,
+) {
+    let mut parts = line.splitn(2, '\t');
+    let status_str = parts.next().unwrap_or_default();
+    let project_name = parts.next().unwrap_or_default();
 
-                if statuses.is_empty() {
-                    return true;
-                }
+    if !service_name_set.contains(project_name) {
+        return;
+    }
 
-                statuses.iter().all(|status| {
-                    status.starts_with("Exited")
-                        || status.starts_with("Created")
-                        || status.starts_with("Dead")
-                })
-            }
-            _ => false,
-        }
+    if status_str.starts_with("Up")
+        && let Some(status) = statuses.get_mut(project_name)
+        && *status != Status::Error
+    {
+        *status = Status::Running;
     }
 }
 
 fn validate_service_name(name: &str) -> bool {
     name.chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn batch_status_parser_marks_project_running_when_any_container_is_up() {
+        let mut statuses = HashMap::from([
+            ("redis".to_string(), Status::Stopped),
+            ("mailpit".to_string(), Status::Stopped),
+        ]);
+        let names = HashSet::from(["redis", "mailpit"]);
+
+        apply_batch_status_line(&mut statuses, &names, "Exited (0)\tredis");
+        apply_batch_status_line(&mut statuses, &names, "Up 3 seconds\tredis");
+
+        assert_eq!(statuses.get("redis"), Some(&Status::Running));
+    }
+
+    #[test]
+    fn batch_status_parser_ignores_unknown_projects() {
+        let mut statuses = HashMap::from([("redis".to_string(), Status::Stopped)]);
+        let names = HashSet::from(["redis"]);
+
+        apply_batch_status_line(&mut statuses, &names, "Up 3 seconds\tpostgres");
+
+        assert_eq!(statuses.get("redis"), Some(&Status::Stopped));
+    }
 }

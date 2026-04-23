@@ -508,18 +508,16 @@ fn colorize_runtime_event(scope: &str, details: &str) -> Line<'static> {
     ];
 
     if let Some(ips_body) = extract_bracket_body(details, "ips=") {
-        spans.push(Span::styled("ips=[", Style::default().fg(Color::Blue)));
-        spans.extend(colorize_ip_mappings(&ips_body));
-        spans.push(Span::styled("]", Style::default().fg(Color::Blue)));
+        spans.push(Span::styled("ip ", Style::default().fg(Color::Blue)));
+        spans.extend(colorize_compact_ip_mappings(&ips_body));
     }
 
     if let Some(ports_body) = extract_bracket_body(details, "ports=") {
         if !spans.is_empty() {
             spans.push(Span::styled(" ", Style::default().fg(Color::DarkGray)));
         }
-        spans.push(Span::styled("ports=[", Style::default().fg(Color::Magenta)));
-        spans.extend(colorize_port_mappings(&ports_body));
-        spans.push(Span::styled("]", Style::default().fg(Color::Magenta)));
+        spans.push(Span::styled("ports ", Style::default().fg(Color::Magenta)));
+        spans.extend(colorize_compact_port_mappings(&ports_body));
     } else {
         spans.push(Span::styled(
             details.to_string(),
@@ -561,7 +559,7 @@ fn extract_bracket_body(details: &str, key: &str) -> Option<String> {
     Some(rest[1..end].to_string())
 }
 
-fn colorize_ip_mappings(mappings: &str) -> Vec<Span<'static>> {
+fn colorize_compact_ip_mappings(mappings: &str) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     for (idx, mapping) in mappings.split(',').map(str::trim).enumerate() {
         if mapping.is_empty() {
@@ -574,12 +572,7 @@ fn colorize_ip_mappings(mappings: &str) -> Vec<Span<'static>> {
 
         if let Some((network, ip)) = mapping.split_once('=') {
             spans.push(Span::styled(
-                network.to_string(),
-                Style::default().fg(Color::Cyan),
-            ));
-            spans.push(Span::styled("=", Style::default().fg(Color::DarkGray)));
-            spans.push(Span::styled(
-                ip.to_string(),
+                compact_ip_label(network, ip),
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
@@ -594,7 +587,7 @@ fn colorize_ip_mappings(mappings: &str) -> Vec<Span<'static>> {
     spans
 }
 
-fn colorize_port_mappings(mappings: &str) -> Vec<Span<'static>> {
+fn colorize_compact_port_mappings(mappings: &str) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     for (idx, mapping) in mappings.split(',').map(str::trim).enumerate() {
         if mapping.is_empty() {
@@ -606,35 +599,13 @@ fn colorize_port_mappings(mappings: &str) -> Vec<Span<'static>> {
         }
 
         if let Some((container_port, host_binding)) = mapping.split_once('=') {
+            let label = compact_port_label(container_port, host_binding);
             spans.push(Span::styled(
-                container_port.to_string(),
-                Style::default().fg(Color::Yellow),
+                label,
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .add_modifier(Modifier::BOLD),
             ));
-            spans.push(Span::styled("=", Style::default().fg(Color::DarkGray)));
-
-            if host_binding == "internal" {
-                spans.push(Span::styled(
-                    "internal".to_string(),
-                    Style::default().fg(Color::Gray),
-                ));
-            } else if let Some((host_ip, host_port)) = host_binding.rsplit_once(':') {
-                spans.push(Span::styled(
-                    host_ip.to_string(),
-                    Style::default().fg(Color::Blue),
-                ));
-                spans.push(Span::styled(":", Style::default().fg(Color::DarkGray)));
-                spans.push(Span::styled(
-                    host_port.to_string(),
-                    Style::default()
-                        .fg(Color::LightMagenta)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            } else {
-                spans.push(Span::styled(
-                    host_binding.to_string(),
-                    Style::default().fg(Color::Blue),
-                ));
-            }
         } else {
             spans.push(Span::styled(
                 mapping.to_string(),
@@ -643,4 +614,53 @@ fn colorize_port_mappings(mappings: &str) -> Vec<Span<'static>> {
         }
     }
     spans
+}
+
+fn compact_ip_label(network: &str, ip: &str) -> String {
+    if ip == "pending" || ip == "unknown" {
+        format!("{}:{}", network, ip)
+    } else {
+        ip.to_string()
+    }
+}
+
+fn compact_port_label(container_port: &str, host_binding: &str) -> String {
+    let container_port = container_port
+        .split_once('/')
+        .map(|(port, _)| port)
+        .unwrap_or(container_port);
+
+    if host_binding == "internal" {
+        return format!("{} int", container_port);
+    }
+
+    if let Some((_, host_port)) = host_binding.rsplit_once(':') {
+        if host_port == container_port {
+            host_port.to_string()
+        } else {
+            format!("{}->{}", container_port, host_port)
+        }
+    } else {
+        format!("{}->{}", container_port, host_binding)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_port_label_removes_protocol_and_matching_host_ip() {
+        assert_eq!(compact_port_label("1025/tcp", "0.0.0.0:1025"), "1025");
+    }
+
+    #[test]
+    fn compact_port_label_shows_host_mapping_when_ports_differ() {
+        assert_eq!(compact_port_label("8080/tcp", "0.0.0.0:5433"), "8080->5433");
+    }
+
+    #[test]
+    fn compact_port_label_marks_internal_ports() {
+        assert_eq!(compact_port_label("1110/tcp", "internal"), "1110 int");
+    }
 }

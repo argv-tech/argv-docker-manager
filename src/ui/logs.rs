@@ -42,8 +42,8 @@ fn selected_logs(app: &App) -> Text<'static> {
         let service = &app.services[index];
         match app.log_tab {
             LogTab::Events => {
-                let logs = service.events.lock().unwrap().clone();
-                let status = service.status.lock().unwrap().clone();
+                let logs = service.events.lock().unwrap().snapshot();
+                let status = service.status();
                 let pull_progress = service.pull_progress.lock().unwrap().clone();
 
                 let mut content = if logs.is_empty() {
@@ -66,7 +66,7 @@ fn selected_logs(app: &App) -> Text<'static> {
                 content
             }
             LogTab::LiveLogs => {
-                let logs = service.live_logs.lock().unwrap().clone();
+                let logs = service.live_logs.lock().unwrap().snapshot();
                 if logs.is_empty() {
                     Text::from(vec![Line::from(vec![Span::styled(
                         "No live logs yet - start the service to see logs",

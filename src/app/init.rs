@@ -1,10 +1,8 @@
-use std::sync::{Arc, Mutex};
-
 use crate::app::state::{App, DaemonAction, Focus, LogTab};
 use crate::config::Keybinds;
 use crate::docker::client::DockerClient;
 use crate::service::Service;
-use crate::status::{Status, ToastState};
+use crate::status::ToastState;
 
 impl App {
     pub fn new(keybinds: Keybinds) -> Self {
@@ -50,18 +48,7 @@ impl App {
 
         let mut app = Self {
             state: ratatui::widgets::ListState::default(),
-            services: service_names
-                .into_iter()
-                .map(|name| Service {
-                    name,
-                    status: Arc::new(Mutex::new(Status::Stopped)),
-                    pull_progress: Arc::new(Mutex::new(None)),
-                    events: Arc::new(Mutex::new(String::new())),
-                    logs: Arc::new(Mutex::new(String::new())),
-                    live_logs: Arc::new(Mutex::new(String::new())),
-                    logs_child: Arc::new(Mutex::new(None)),
-                })
-                .collect(),
+            services: service_names.into_iter().map(Service::new).collect(),
             toast,
             toast_timer,
 

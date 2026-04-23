@@ -47,7 +47,7 @@ pub fn render(frame: &mut Frame, app: &mut App, list_area: Rect, search_area: Op
     let items: Vec<ListItem> = filtered_services
         .iter()
         .map(|service| {
-            let status = service.status.lock().unwrap().clone();
+            let status = service.status();
             let style = status_style(&status);
             let indicator = status_indicator(&status, app.animation_tick);
             let line = format!("{} {}  {}", indicator, service.name, status);
@@ -58,7 +58,7 @@ pub fn render(frame: &mut Frame, app: &mut App, list_area: Rect, search_area: Op
     let running_count = app
         .services
         .iter()
-        .filter(|service| *service.status.lock().unwrap() == Status::Running)
+        .filter(|service| service.status() == Status::Running)
         .count();
     let title = services_title(app.focus, running_count, app.services.len());
 
@@ -104,7 +104,7 @@ fn services_title(_focus: Focus, running_count: usize, total_count: usize) -> Li
 
 fn selected_style(app: &App) -> Style {
     if let Some(index) = app.state.selected() {
-        let status = app.services[index].status.lock().unwrap().clone();
+        let status = app.services[index].status();
         if matches!(
             status,
             Status::Starting | Status::Stopping | Status::Pulling

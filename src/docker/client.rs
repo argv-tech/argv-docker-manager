@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 use crate::status::Status;
@@ -52,11 +52,10 @@ impl DockerClient {
         {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
-                let lines: Vec<&str> = stdout.trim().lines().collect();
-                if lines.is_empty() {
+                if stdout.trim().is_empty() {
                     Status::Stopped
                 } else {
-                    let has_running = lines.iter().any(|line| {
+                    let has_running = stdout.lines().any(|line| {
                         line.split('\t')
                             .nth(1)
                             .map(|status| status.starts_with("Up"))
@@ -75,6 +74,7 @@ impl DockerClient {
 
     pub fn get_batch_statuses(service_names: &[String]) -> HashMap<String, Status> {
         let mut statuses = HashMap::new();
+        let service_name_set: HashSet<&str> = service_names.iter().map(String::as_str).collect();
 
         for name in service_names {
             if !validate_service_name(name) {
@@ -103,13 +103,13 @@ impl DockerClient {
                         let status_str = parts[1];
                         let project_name = parts[2];
 
-                        if service_names.contains(&project_name.to_string()) {
+                        if service_name_set.contains(project_name) {
                             let status = if status_str.starts_with("Up") {
                                 Status::Running
                             } else {
                                 Status::Stopped
                             };
-                            statuses.insert(project_name.to_string(), status);
+                            statuses.insert(project_name.to_owned(), status);
                         }
                     }
                 }

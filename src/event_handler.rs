@@ -214,7 +214,7 @@ fn selected_service_transitioning(app: &App) -> bool {
         .selected()
         .map(|index| {
             matches!(
-                *app.services[index].status.lock().unwrap(),
+                app.services[index].status(),
                 Status::Pulling | Status::Starting | Status::Stopping
             )
         })
@@ -287,7 +287,7 @@ fn refresh_if_transitioning(app: &mut App) {
 
     let needs_refresh = app.services.iter().any(|service| {
         matches!(
-            *service.status.lock().unwrap(),
+            service.status(),
             Status::Pulling | Status::Starting | Status::Stopping
         )
     });

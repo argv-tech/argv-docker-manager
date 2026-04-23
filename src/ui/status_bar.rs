@@ -21,7 +21,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let running_services = app
         .services
         .iter()
-        .filter(|service| *service.status.lock().unwrap() == Status::Running)
+        .filter(|service| service.status() == Status::Running)
         .count();
     let total_services = app.services.len();
 

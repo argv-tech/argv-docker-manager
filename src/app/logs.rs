@@ -57,7 +57,7 @@ impl App {
         let selected_index = self.state.selected();
         let target_index = selected_index.filter(|&index| {
             self.log_tab == crate::app::LogTab::LiveLogs
-                && *self.services[index].status.lock().unwrap() == Status::Running
+                && self.services[index].status() == Status::Running
         });
 
         for index in 0..self.services.len() {
@@ -89,8 +89,7 @@ impl App {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
                     let mut logs = live_logs.lock().unwrap();
-                    logs.push_str(&line);
-                    logs.push('\n');
+                    logs.push_line(&line);
                 }
 
                 if let Some(mut child) = logs_child.lock().unwrap().take() {
@@ -106,7 +105,7 @@ impl App {
             let _ = child.kill();
             let _ = child.wait();
         }
-        if *service.status.lock().unwrap() != Status::Running {
+        if service.status() != Status::Running {
             service.live_logs.lock().unwrap().clear();
         }
     }

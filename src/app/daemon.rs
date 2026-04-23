@@ -51,9 +51,8 @@ impl App {
             .services
             .iter()
             .filter(|s| {
-                let status = s.status.lock().unwrap();
                 matches!(
-                    *status,
+                    s.status(),
                     Status::Running | Status::Starting | Status::Stopping | Status::Pulling
                 )
             })

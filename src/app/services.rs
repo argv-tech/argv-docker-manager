@@ -38,7 +38,9 @@ impl App {
                 service.clear_pull_progress();
             }
         } else if self.first_status_check || daemon_changed || has_transitioning_services {
-            let batch_statuses = DockerClient::get_batch_statuses(&self.service_names);
+            let batch_statuses = DockerClient::get_batch_statuses(
+                self.services.iter().map(|service| service.name.as_str()),
+            );
 
             for service in &self.services {
                 if let Some(actual_status) = batch_statuses.get(&service.name).copied() {

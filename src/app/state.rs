@@ -50,7 +50,6 @@ impl Default for LogsRenderCache {
 pub struct App {
     pub state: ratatui::widgets::ListState,
     pub services: Vec<Service>,
-    pub service_names: Vec<String>,
     pub toast: Option<Toast>,
     pub toast_timer: u32,
 

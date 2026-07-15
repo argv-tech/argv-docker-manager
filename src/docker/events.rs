@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
-use std::process::Command;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crate::docker::inspect;
 use crate::service::{LogBuffer, SharedLogBuffer};
 use crate::status::Status;
 
@@ -96,14 +96,14 @@ pub fn append_project_event(logs: &SharedLogBuffer, project: &str, action: &str)
 }
 
 pub fn append_running_snapshot(logs: &SharedLogBuffer, project: &str) {
-    for container_name in list_project_containers(project) {
+    for container_name in inspect::project_containers(project) {
         append_event_log(logs, project, &container_name, "running (snapshot)");
         append_runtime_details(logs, &container_name);
     }
 }
 
 pub fn append_project_runtime_details(logs: &SharedLogBuffer, project: &str) {
-    for container_name in list_project_containers(project) {
+    for container_name in inspect::project_containers(project) {
         append_runtime_details(logs, &container_name);
     }
 }
@@ -186,10 +186,7 @@ fn resolve_project_from_container(container_name: &str) -> Option<String> {
         return None;
     }
 
-    docker_inspect_field(
-        container_name,
-        "{{index .Config.Labels \"com.docker.compose.project\"}}",
-    )
+    inspect::project_name(container_name)
 }
 
 fn append_runtime_details(logs: &SharedLogBuffer, container_name: &str) {
@@ -197,83 +194,13 @@ fn append_runtime_details(logs: &SharedLogBuffer, container_name: &str) {
         return;
     }
 
-    let ips = docker_inspect_field(
-        container_name,
-        "{{range $k, $v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}",
-    )
-    .unwrap_or_else(|| "unknown".to_string());
-
-    let ports = docker_inspect_field(
-        container_name,
-        "{{range $p, $v := .NetworkSettings.Ports}}{{$p}}={{if $v}}{{(index $v 0).HostIp}}:{{(index $v 0).HostPort}}{{else}}internal{{end}} {{end}}",
-    )
-    .unwrap_or_else(|| "none".to_string());
-
-    let ips = normalize_runtime_value(&ips, "pending");
-    let ports = normalize_runtime_value(&ports, "none");
+    let details = inspect::runtime_details(container_name);
 
     let mut logs_lock = logs.lock().unwrap();
     logs_lock.push_str(&format!(
         "[event] {} runtime ips=[{}] ports=[{}]\n",
-        container_name, ips, ports
+        container_name, details.ips, details.ports
     ));
-}
-
-fn list_project_containers(project: &str) -> Vec<String> {
-    let output = Command::new("docker")
-        .arg("ps")
-        .arg("--filter")
-        .arg(format!("label=com.docker.compose.project={}", project))
-        .arg("--format")
-        .arg("{{.Names}}")
-        .output();
-
-    match output {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(ToOwned::to_owned)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn docker_inspect_field(container_name: &str, template: &str) -> Option<String> {
-    let output = Command::new("docker")
-        .arg("inspect")
-        .arg("--format")
-        .arg(template)
-        .arg(container_name)
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if value.is_empty() { None } else { Some(value) }
-}
-
-fn normalize_whitespace(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(", ")
-}
-
-fn normalize_runtime_value(value: &str, fallback: &str) -> String {
-    let normalized = normalize_whitespace(value);
-    if normalized.is_empty()
-        || normalized.eq_ignore_ascii_case("unknown")
-        || normalized.eq_ignore_ascii_case("none")
-        || normalized.eq_ignore_ascii_case("invalid, IP")
-        || normalized.eq_ignore_ascii_case("invalid IP")
-        || normalized.eq_ignore_ascii_case("<no, value>")
-        || normalized.eq_ignore_ascii_case("<no value>")
-    {
-        fallback.to_string()
-    } else {
-        normalized
-    }
 }
 
 fn append_event_log(logs: &SharedLogBuffer, project: &str, container_name: &str, action: &str) {

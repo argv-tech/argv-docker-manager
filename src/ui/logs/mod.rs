@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Text},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 
 use crate::app::{App, Focus, LogTab};
@@ -16,55 +16,79 @@ use progress::{event_progress_line, placeholder_text};
 use title::logs_title;
 
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
-    let (logs_content, total_lines) = selected_logs(app);
     let title = logs_title(app);
     let border_color = if app.focus == Focus::Logs {
         Color::Blue
     } else {
         Color::White
     };
+    let progress_line = refresh_logs_cache(app);
+    let progress_line_count = if progress_line.is_some() { 2 } else { 0 };
+    let total_lines = app
+        .logs_render_cache
+        .body_line_count
+        .saturating_add(progress_line_count);
 
     if app.log_auto_scroll {
         let visible_lines = area.height.saturating_sub(2);
         app.log_scroll = total_lines.saturating_sub(visible_lines);
     }
 
-    let logs_widget = Paragraph::new(logs_content)
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(border_color)),
-        )
-        .style(Style::default().fg(Color::Gray))
-        .scroll((app.log_scroll, 0));
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+    let body_area = block.inner(area);
+    frame.render_widget(block, area);
+    frame
+        .buffer_mut()
+        .set_style(body_area, Style::default().fg(Color::Gray));
 
-    frame.render_widget(logs_widget, area);
+    render_log_lines(
+        frame,
+        &app.logs_render_cache.body,
+        progress_line.as_ref(),
+        body_area,
+        app.log_scroll,
+    );
 }
 
-fn selected_logs(app: &mut App) -> (Text<'static>, u16) {
+fn refresh_logs_cache(app: &mut App) -> Option<Line<'static>> {
     let Some(index) = app.state.selected() else {
-        return placeholder_text("Select a service to view logs");
+        if app.logs_render_cache.service_index.is_some()
+            || app.logs_render_cache.body_line_count == 0
+        {
+            let (body, body_line_count) = placeholder_text("Select a service to view logs");
+            app.logs_render_cache = crate::app::state::LogsRenderCache {
+                service_index: None,
+                tab: app.log_tab,
+                buffer_revision: 0,
+                body,
+                body_line_count,
+            };
+        }
+        return None;
     };
 
-    let (buffer_revision, logs_snapshot) = {
+    let cached_revision = (app.logs_render_cache.service_index == Some(index)
+        && app.logs_render_cache.tab == app.log_tab)
+        .then_some(app.logs_render_cache.buffer_revision);
+
+    let snapshot = {
         let service = &app.services[index];
         match app.log_tab {
             LogTab::Events => {
                 let buffer = service.events.lock().unwrap();
-                (buffer.revision(), buffer.snapshot())
+                buffer.snapshot_if_changed(cached_revision)
             }
             LogTab::LiveLogs => {
                 let buffer = service.live_logs.lock().unwrap();
-                (buffer.revision(), buffer.snapshot())
+                buffer.snapshot_if_changed(cached_revision)
             }
         }
     };
 
-    if app.logs_render_cache.service_index != Some(index)
-        || app.logs_render_cache.tab != app.log_tab
-        || app.logs_render_cache.buffer_revision != buffer_revision
-    {
+    if let Some((buffer_revision, logs_snapshot)) = snapshot {
         let body = match app.log_tab {
             LogTab::Events => {
                 if logs_snapshot.is_empty() {
@@ -86,7 +110,7 @@ fn selected_logs(app: &mut App) -> (Text<'static>, u16) {
             service_index: Some(index),
             tab: app.log_tab,
             buffer_revision,
-            body_line_count: body.lines.len() as u16,
+            body_line_count: u16::try_from(body.lines.len()).unwrap_or(u16::MAX),
             body,
         };
     }
@@ -96,24 +120,37 @@ fn selected_logs(app: &mut App) -> (Text<'static>, u16) {
         let status = service.status();
         let pull_progress = service.pull_progress.lock().unwrap().clone();
 
-        if let Some(progress_line) =
-            event_progress_line(&status, pull_progress.as_deref(), app.animation_tick)
-        {
-            let mut lines = Vec::with_capacity(app.logs_render_cache.body.lines.len() + 2);
-            lines.push(progress_line);
-            lines.push(Line::from(""));
-            lines.extend(app.logs_render_cache.body.lines.iter().cloned());
-            return (
-                Text::from(lines),
-                app.logs_render_cache.body_line_count.saturating_add(2),
-            );
-        }
+        return event_progress_line(&status, pull_progress.as_deref(), app.animation_tick);
     }
 
-    (
-        app.logs_render_cache.body.clone(),
-        app.logs_render_cache.body_line_count,
-    )
+    None
+}
+
+fn render_log_lines(
+    frame: &mut Frame,
+    body: &Text<'_>,
+    progress_line: Option<&Line<'_>>,
+    area: Rect,
+    scroll: u16,
+) {
+    let progress_line_count = if progress_line.is_some() { 2 } else { 0 };
+    let blank_line = Line::from("");
+
+    for (row, logical_index) in (scroll as usize..).take(area.height as usize).enumerate() {
+        let line = match (progress_line, logical_index) {
+            (Some(line), 0) => Some(line),
+            (Some(_), 1) => Some(&blank_line),
+            _ => body
+                .lines
+                .get(logical_index.saturating_sub(progress_line_count)),
+        };
+        let Some(line) = line else {
+            break;
+        };
+
+        let line_area = Rect::new(area.x, area.y + row as u16, area.width, 1);
+        frame.render_widget(line, line_area);
+    }
 }
 
 #[cfg(test)]
@@ -122,12 +159,12 @@ mod tests {
     use crate::app::{DaemonAction, Focus, LogTab};
     use crate::config::{AppKeys, Keybinds, LogsKeys, ServicesKeys};
     use crate::service::Service;
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn test_app() -> App {
         App {
             state: ratatui::widgets::ListState::default(),
             services: vec![Service::new("redis".to_string())],
-            service_names: vec!["redis".to_string()],
             toast: None,
             toast_timer: 0,
             search_mode: false,
@@ -175,26 +212,31 @@ mod tests {
     }
 
     #[test]
-    fn selected_logs_reuses_cached_body_when_revision_is_unchanged() {
+    fn refresh_logs_cache_reuses_body_when_revision_is_unchanged() {
         let mut app = test_app();
         app.state.select(Some(0));
 
-        let _ = selected_logs(&mut app);
+        let _ = refresh_logs_cache(&mut app);
         app.logs_render_cache.body = Text::from("sentinel");
         app.logs_render_cache.body_line_count = 1;
 
-        let (logs, line_count) = selected_logs(&mut app);
+        let _ = refresh_logs_cache(&mut app);
 
-        assert_eq!(logs.lines[0].spans[0].content.as_ref(), "sentinel");
-        assert_eq!(line_count, 1);
+        assert_eq!(
+            app.logs_render_cache.body.lines[0].spans[0]
+                .content
+                .as_ref(),
+            "sentinel"
+        );
+        assert_eq!(app.logs_render_cache.body_line_count, 1);
     }
 
     #[test]
-    fn selected_logs_invalidates_cache_when_buffer_revision_changes() {
+    fn refresh_logs_cache_invalidates_body_when_buffer_revision_changes() {
         let mut app = test_app();
         app.state.select(Some(0));
 
-        let _ = selected_logs(&mut app);
+        let _ = refresh_logs_cache(&mut app);
         app.logs_render_cache.body = Text::from("stale");
         app.logs_render_cache.body_line_count = 1;
         app.services[0]
@@ -203,8 +245,31 @@ mod tests {
             .unwrap()
             .push_line("[event] redis start");
 
-        let (logs, _) = selected_logs(&mut app);
+        let _ = refresh_logs_cache(&mut app);
 
-        assert_ne!(logs.lines[0].spans[0].content.as_ref(), "stale");
+        assert_ne!(
+            app.logs_render_cache.body.lines[0].spans[0]
+                .content
+                .as_ref(),
+            "stale"
+        );
+    }
+
+    #[test]
+    fn render_log_lines_applies_scroll_across_progress_and_body() {
+        let backend = TestBackend::new(12, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let body = Text::from(vec![Line::from("first"), Line::from("second")]);
+        let progress = Line::from("progress");
+
+        terminal
+            .draw(|frame| {
+                render_log_lines(frame, &body, Some(&progress), frame.area(), 1);
+            })
+            .unwrap();
+
+        terminal
+            .backend()
+            .assert_buffer_lines(["            ", "first       ", "second      "]);
     }
 }

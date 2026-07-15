@@ -48,8 +48,7 @@ impl App {
 
         let mut app = Self {
             state: ratatui::widgets::ListState::default(),
-            services: service_names.iter().cloned().map(Service::new).collect(),
-            service_names,
+            services: service_names.into_iter().map(Service::new).collect(),
             toast,
             toast_timer,
 

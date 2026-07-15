@@ -1,5 +1,6 @@
-use crate::status::Status;
 use std::sync::{Arc, Mutex};
+
+use crate::status::Status;
 
 const MAX_COMMAND_LOG_SIZE: usize = 512 * 1024;
 const MAX_EVENT_LOG_SIZE: usize = 100 * 1024;
@@ -45,8 +46,11 @@ impl LogBuffer {
     }
 
     pub fn push_line(&mut self, line: &str) {
-        self.push_str(line);
-        self.push_str("\n");
+        self.text.reserve(line.len().saturating_add(1));
+        self.text.push_str(line);
+        self.text.push('\n');
+        self.truncate_front();
+        self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn clear(&mut self) {
@@ -69,6 +73,11 @@ impl LogBuffer {
         self.as_str().to_owned()
     }
 
+    pub fn snapshot_if_changed(&self, revision: Option<u64>) -> Option<(u64, String)> {
+        (revision != Some(self.revision)).then(|| (self.revision, self.snapshot()))
+    }
+
+    #[cfg(test)]
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -167,5 +176,24 @@ mod tests {
 
         assert!(after_push > initial);
         assert!(buffer.revision() > after_push);
+    }
+
+    #[test]
+    fn log_buffer_push_line_increments_revision_once() {
+        let mut buffer = LogBuffer::new(24);
+
+        buffer.push_line("new line");
+
+        assert_eq!(buffer.revision(), 1);
+    }
+
+    #[test]
+    fn log_buffer_snapshot_is_skipped_when_revision_is_unchanged() {
+        let mut buffer = LogBuffer::new(24);
+        buffer.push_line("new line");
+
+        let snapshot = buffer.snapshot_if_changed(Some(buffer.revision()));
+
+        assert!(snapshot.is_none());
     }
 }

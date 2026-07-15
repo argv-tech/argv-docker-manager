@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::process::Command;
 
 use crate::status::Status;
@@ -72,19 +72,22 @@ impl DockerClient {
         }
     }
 
-    pub fn get_batch_statuses(service_names: &[String]) -> HashMap<String, Status> {
-        let mut statuses = HashMap::new();
-        let service_name_set: HashSet<&str> = service_names.iter().map(String::as_str).collect();
+    pub fn get_batch_statuses<'a>(
+        service_names: impl IntoIterator<Item = &'a str>,
+    ) -> HashMap<String, Status> {
+        let mut statuses: HashMap<String, Status> = service_names
+            .into_iter()
+            .map(|name| {
+                let status = if validate_service_name(name) {
+                    Status::Stopped
+                } else {
+                    Status::Error
+                };
+                (name.to_owned(), status)
+            })
+            .collect();
 
-        for name in service_names {
-            if !validate_service_name(name) {
-                statuses.insert(name.clone(), Status::Error);
-            } else {
-                statuses.insert(name.clone(), Status::Stopped);
-            }
-        }
-
-        if service_names.is_empty() {
+        if statuses.is_empty() {
             return statuses;
         }
 
@@ -99,12 +102,12 @@ impl DockerClient {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 for line in stdout.lines() {
-                    apply_batch_status_line(&mut statuses, &service_name_set, line);
+                    apply_batch_status_line(&mut statuses, line);
                 }
             }
             Err(_) => {
-                for name in service_names {
-                    statuses.insert(name.clone(), Status::Error);
+                for status in statuses.values_mut() {
+                    *status = Status::Error;
                 }
             }
         }
@@ -113,18 +116,10 @@ impl DockerClient {
     }
 }
 
-fn apply_batch_status_line(
-    statuses: &mut HashMap<String, Status>,
-    service_name_set: &HashSet<&str>,
-    line: &str,
-) {
+fn apply_batch_status_line(statuses: &mut HashMap<String, Status>, line: &str) {
     let mut parts = line.splitn(2, '\t');
     let status_str = parts.next().unwrap_or_default();
     let project_name = parts.next().unwrap_or_default();
-
-    if !service_name_set.contains(project_name) {
-        return;
-    }
 
     if status_str.starts_with("Up")
         && let Some(status) = statuses.get_mut(project_name)
@@ -149,10 +144,8 @@ mod tests {
             ("redis".to_string(), Status::Stopped),
             ("mailpit".to_string(), Status::Stopped),
         ]);
-        let names = HashSet::from(["redis", "mailpit"]);
-
-        apply_batch_status_line(&mut statuses, &names, "Exited (0)\tredis");
-        apply_batch_status_line(&mut statuses, &names, "Up 3 seconds\tredis");
+        apply_batch_status_line(&mut statuses, "Exited (0)\tredis");
+        apply_batch_status_line(&mut statuses, "Up 3 seconds\tredis");
 
         assert_eq!(statuses.get("redis"), Some(&Status::Running));
     }
@@ -160,9 +153,7 @@ mod tests {
     #[test]
     fn batch_status_parser_ignores_unknown_projects() {
         let mut statuses = HashMap::from([("redis".to_string(), Status::Stopped)]);
-        let names = HashSet::from(["redis"]);
-
-        apply_batch_status_line(&mut statuses, &names, "Up 3 seconds\tpostgres");
+        apply_batch_status_line(&mut statuses, "Up 3 seconds\tpostgres");
 
         assert_eq!(statuses.get("redis"), Some(&Status::Stopped));
     }

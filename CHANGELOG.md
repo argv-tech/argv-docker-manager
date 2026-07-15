@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0-1] - 2026-07-15
+
+### 🐛 Bug Fixes
+
+- *(auto-restart)* Auto-install boot unit and add --remove-auto-restart
+- Systemd
+- Spawn compose detached to avoid blocking boot
+
+### ⚙️ Miscellaneous Tasks
+
+- Mark hotfix tags as pre-release
+
 ## [0.3.0] - 2026-07-15
 
 ### 🚀 Features

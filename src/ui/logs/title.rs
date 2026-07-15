@@ -1,9 +1,11 @@
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 
-use crate::app::{App, Focus, LogTab};
+use crate::app::{App, LogTab};
+
+use super::super::theme;
 
 pub(super) fn logs_title(app: &App) -> Line<'static> {
     let selected_name = app
@@ -11,45 +13,60 @@ pub(super) fn logs_title(app: &App) -> Line<'static> {
         .selected()
         .and_then(|index| app.services.get(index))
         .map(|service| service.name.clone())
-        .unwrap_or_else(|| "none".to_string());
+        .unwrap_or_else(|| "NO SELECTION".to_string());
 
-    let mut spans = vec![
-        Span::styled(" Logs ", Style::default().fg(Color::White)),
-        Span::styled(selected_name, Style::default().fg(Color::Cyan)),
-    ];
-
-    spans.push(Span::styled("  |  ", Style::default().fg(Color::DarkGray)));
-    if app.log_tab == LogTab::Events {
-        spans.push(Span::styled(
-            "[Events]",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let name_color = if app.state.selected().is_some() {
+        theme::ACCENT
     } else {
-        spans.push(Span::styled("Events", Style::default().fg(Color::White)));
-    }
+        theme::MUTED
+    };
 
-    spans.push(Span::styled("  |  ", Style::default().fg(Color::DarkGray)));
-    if app.log_tab == LogTab::LiveLogs {
-        spans.push(Span::styled(
-            "[Live Logs]",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
+    let total = app.logs_render_cache.body_line_count;
+    let position = if total == 0 {
+        String::new()
+    } else if app.log_auto_scroll {
+        format!("↓ {total}/{total}")
     } else {
-        spans.push(Span::styled("Live Logs", Style::default().fg(Color::White)));
-    }
+        let view_top = app.log_scroll.saturating_add(1);
+        format!(" L{view_top}/{total}")
+    };
 
-    if app.focus == Focus::Logs && app.log_auto_scroll {
-        spans.push(Span::styled(
-            " [AUTO]",
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
+    Line::from(vec![
+        Span::styled(
+            " ACTIVITY ",
+            Style::new().fg(theme::TEXT).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(selected_name, Style::new().fg(name_color)),
+        Span::styled("  ", Style::new().fg(theme::MUTED)),
+        tab("EVENTS", app.log_tab == LogTab::Events),
+        Span::raw(" "),
+        tab("LIVE", app.log_tab == LogTab::LiveLogs),
+        Span::styled("  ", Style::new().fg(theme::MUTED)),
+        Span::styled(
+            if app.log_auto_scroll {
+                "↓ AUTO"
+            } else {
+                "Ⅱ PAUSED"
+            },
+            Style::new().fg(if app.log_auto_scroll {
+                theme::RUNNING
+            } else {
+                theme::TRANSITION
+            }),
+        ),
+        Span::styled(format!("  {position}"), Style::new().fg(theme::MUTED)),
+    ])
+}
 
-    Line::from(spans)
+fn tab(label: &'static str, active: bool) -> Span<'static> {
+    if active {
+        Span::styled(
+            format!(" {label} "),
+            Style::new()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+        )
+    } else {
+        Span::styled(format!(" {label} "), Style::new().fg(theme::MUTED))
+    }
 }

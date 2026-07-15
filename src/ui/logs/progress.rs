@@ -7,11 +7,14 @@ use crate::status::Status;
 
 pub(super) fn placeholder_text(message: &'static str) -> (Text<'static>, u16) {
     (
-        Text::from(vec![Line::from(vec![Span::styled(
-            message,
-            Style::default().fg(Color::DarkGray),
-        )])]),
-        1,
+        Text::from(vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ◇  ", Style::new().fg(Color::Cyan)),
+                Span::styled(message, Style::new().fg(Color::DarkGray)),
+            ]),
+        ]),
+        2,
     )
 }
 
@@ -25,57 +28,53 @@ pub(super) fn event_progress_line(
             let progress = pull_progress.unwrap_or("in progress");
             let bar = progress_bar(tick, parse_progress_percent(progress));
             Some(Line::from(vec![
-                Span::styled("[progress] ", Style::default().fg(Color::DarkGray)),
+                Span::styled("[progress] ", Style::new().fg(Color::DarkGray)),
                 Span::styled(
                     format!("{}", status),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
+                    Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" [", Style::default().fg(Color::DarkGray)),
-                Span::styled(bar, Style::default().fg(Color::Cyan)),
-                Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled(progress.to_string(), Style::default().fg(Color::White)),
-                Span::styled(" ", Style::default().fg(Color::DarkGray)),
+                Span::styled(" [", Style::new().fg(Color::DarkGray)),
+                Span::styled(bar, Style::new().fg(Color::Cyan)),
+                Span::styled("] ", Style::new().fg(Color::DarkGray)),
+                Span::styled(progress.to_string(), Style::new().fg(Color::White)),
+                Span::styled(" ", Style::new().fg(Color::DarkGray)),
                 Span::styled(
                     pulling_spinner(tick).to_string(),
-                    Style::default().fg(Color::Cyan),
+                    Style::new().fg(Color::Cyan),
                 ),
             ]))
         }
         Status::Starting => {
             let bar = progress_bar(tick, None);
             Some(Line::from(vec![
-                Span::styled("[progress] ", Style::default().fg(Color::DarkGray)),
+                Span::styled("[progress] ", Style::new().fg(Color::DarkGray)),
                 Span::styled(
                     "starting".to_string(),
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
+                    Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" [", Style::default().fg(Color::DarkGray)),
-                Span::styled(bar, Style::default().fg(Color::Yellow)),
-                Span::styled("] ", Style::default().fg(Color::DarkGray)),
+                Span::styled(" [", Style::new().fg(Color::DarkGray)),
+                Span::styled(bar, Style::new().fg(Color::Yellow)),
+                Span::styled("] ", Style::new().fg(Color::DarkGray)),
                 Span::styled(
                     transition_spinner(tick).to_string(),
-                    Style::default().fg(Color::Yellow),
+                    Style::new().fg(Color::Yellow),
                 ),
             ]))
         }
         Status::Stopping => {
             let bar = progress_bar(tick, None);
             Some(Line::from(vec![
-                Span::styled("[progress] ", Style::default().fg(Color::DarkGray)),
+                Span::styled("[progress] ", Style::new().fg(Color::DarkGray)),
                 Span::styled(
                     "stopping".to_string(),
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" [", Style::default().fg(Color::DarkGray)),
-                Span::styled(bar, Style::default().fg(Color::Red)),
-                Span::styled("] ", Style::default().fg(Color::DarkGray)),
+                Span::styled(" [", Style::new().fg(Color::DarkGray)),
+                Span::styled(bar, Style::new().fg(Color::Red)),
+                Span::styled("] ", Style::new().fg(Color::DarkGray)),
                 Span::styled(
                     transition_spinner(tick).to_string(),
-                    Style::default().fg(Color::Red),
+                    Style::new().fg(Color::Red),
                 ),
             ]))
         }
@@ -116,15 +115,15 @@ fn progress_bar(tick: u64, percent: Option<u8>) -> String {
 
     if let Some(percent) = percent {
         let filled = (percent as usize * WIDTH) / 100;
-        return format!("{}{}", "#".repeat(filled), "-".repeat(WIDTH - filled));
+        return format!("{}{}", "█".repeat(filled), "░".repeat(WIDTH - filled));
     }
 
-    let mut bar = vec!['-'; WIDTH];
+    let mut bar = vec!['░'; WIDTH];
     let offset = (tick as usize) % (WIDTH + MARKER_WIDTH);
     for i in 0..MARKER_WIDTH {
         let idx = offset + i;
         if idx < WIDTH {
-            bar[idx] = '#';
+            bar[idx] = '█';
         }
     }
 

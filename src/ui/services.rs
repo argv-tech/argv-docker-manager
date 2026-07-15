@@ -3,144 +3,203 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{List, ListItem, Paragraph},
 };
 
 use crate::app::{App, Focus};
 use crate::service::Service;
 use crate::status::Status;
 
+use super::theme;
+
 pub fn render(frame: &mut Frame, app: &mut App, list_area: Rect, search_area: Option<Rect>) {
     if let Some(search_area) = search_area {
-        let cursor = "_";
-        let query = if app.search_query.is_empty() {
-            "type to filter services".to_string()
-        } else {
-            format!("{}{}", app.search_query, cursor)
-        };
-
-        let search = Paragraph::new(format!("/{}", query))
-            .block(
-                Block::default()
-                    .title(" Search ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Yellow)),
-            )
-            .style(if app.search_query.is_empty() {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default().fg(Color::White)
-            });
-        frame.render_widget(search, search_area);
+        render_search(frame, app, search_area);
     }
 
     let filtered_services: Vec<&Service> =
         if app.focus == Focus::Services && app.search_mode && !app.search_query.is_empty() {
+            let query = app.search_query.to_lowercase();
             app.services
                 .iter()
-                .filter(|service| service.name.contains(&app.search_query))
+                .filter(|service| service.name.to_lowercase().contains(&query))
                 .collect()
         } else {
             app.services.iter().collect()
         };
 
-    let items: Vec<ListItem> = filtered_services
+    let content_width = list_area.width.saturating_sub(4) as usize;
+    let mut items: Vec<ListItem> = filtered_services
         .iter()
-        .map(|service| {
-            let status = service.status();
-            let style = status_style(&status);
-            let indicator = status_indicator(&status, app.animation_tick);
-            let auto_restart = if app.auto_restart.contains(&service.name) {
-                "↻"
-            } else {
-                " "
-            };
-            let line = format!(
-                "{} {} {}  {}",
-                indicator, auto_restart, service.name, status
-            );
-            ListItem::new(line).style(style)
-        })
+        .map(|service| service_item(service, app, content_width))
         .collect();
+
+    if items.is_empty() {
+        let message = if app.search_mode {
+            "No matching services  ·  Esc to clear"
+        } else {
+            "No services found in ./containers/"
+        };
+        items.push(ListItem::new(Line::from(Span::styled(
+            format!("  {message}"),
+            Style::new().fg(theme::MUTED),
+        ))));
+    }
 
     let running_count = app
         .services
         .iter()
         .filter(|service| service.status() == Status::Running)
         .count();
-    let title = services_title(running_count, app.services.len(), app.auto_restart.len());
+    let title = services_title(
+        running_count,
+        app.services.len(),
+        app.auto_restart.len(),
+        filtered_services.len(),
+        app.search_mode && !app.search_query.is_empty(),
+    );
 
     let list = List::new(items)
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_style(if app.focus == Focus::Services {
-                    Style::default().fg(Color::Blue)
-                } else {
-                    Style::default().fg(Color::DarkGray)
-                }),
+        .block(theme::panel(title, app.focus == Focus::Services))
+        .style(Style::new().fg(theme::TEXT))
+        .highlight_style(
+            Style::new()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
         )
-        .style(Style::default().fg(Color::White))
-        .highlight_style(selected_style(app))
-        .highlight_symbol("▶ ");
+        .highlight_symbol("▌ ");
 
-    frame.render_stateful_widget(list, list_area, &mut app.state);
+    if app.search_mode {
+        let mut search_state = ratatui::widgets::ListState::default();
+        if !filtered_services.is_empty() {
+            search_state.select(Some(0));
+        }
+        frame.render_stateful_widget(list, list_area, &mut search_state);
+    } else {
+        frame.render_stateful_widget(list, list_area, &mut app.state);
+    }
 }
 
-fn status_style(status: &Status) -> Style {
-    match status {
-        Status::Starting => Style::default().fg(Color::Yellow),
-        Status::Stopping => Style::default().fg(Color::Red),
-        Status::Pulling => Style::default().fg(Color::Cyan),
-        Status::Running => Style::default().fg(Color::Green),
-        Status::Stopped => Style::default().fg(Color::Gray),
-        Status::Error => Style::default().fg(Color::White),
-        Status::DaemonNotRunning => Style::default().fg(Color::White),
+fn render_search(frame: &mut Frame, app: &App, area: Rect) {
+    let (query, style) = if app.search_query.is_empty() {
+        (
+            "Filter by project name…".to_string(),
+            Style::new().fg(theme::MUTED),
+        )
+    } else {
+        (
+            format!("{}▌", app.search_query),
+            Style::new().fg(theme::TRANSITION),
+        )
+    };
+
+    let search = Paragraph::new(Line::from(vec![
+        Span::styled(" / ", Style::new().fg(theme::TRANSITION)),
+        Span::styled(query, style),
+    ]))
+    .block(theme::panel(
+        Line::from(Span::styled(
+            " FILTER ",
+            Style::new()
+                .fg(theme::TRANSITION)
+                .add_modifier(Modifier::BOLD),
+        )),
+        true,
+    ));
+
+    frame.render_widget(search, area);
+}
+
+fn service_item(service: &Service, app: &App, width: usize) -> ListItem<'static> {
+    let status = service.status();
+    let indicator = status_indicator(&status, app.animation_tick);
+    let auto_restart = app.auto_restart.contains(&service.name);
+
+    if width < 24 {
+        return ListItem::new(Line::from(vec![
+            Span::styled(
+                format!("{indicator} "),
+                Style::new().fg(theme::status_color(&status)),
+            ),
+            Span::styled(
+                truncate(&service.name, width.saturating_sub(2)),
+                Style::new().fg(theme::TEXT),
+            ),
+        ]));
     }
+
+    let status_label = status_label(&status);
+    let reserved_width = status_label.len() + 7;
+    let name_width = width.saturating_sub(reserved_width).max(4);
+    let name = pad_right(truncate(&service.name, name_width), name_width);
+    let boot_symbol = if auto_restart { "↻" } else { " " };
+    let boot_color = if auto_restart {
+        theme::ACCENT
+    } else {
+        theme::MUTED
+    };
+
+    ListItem::new(Line::from(vec![
+        Span::styled(
+            format!("{indicator} "),
+            Style::new().fg(theme::status_color(&status)),
+        ),
+        Span::styled(name, Style::new().fg(theme::TEXT)),
+        Span::styled(
+            format!(" {status_label:>9} "),
+            Style::new()
+                .fg(theme::status_color(&status))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(boot_symbol, Style::new().fg(boot_color)),
+    ]))
 }
 
 fn services_title(
     running_count: usize,
     total_count: usize,
     auto_restart_count: usize,
+    filtered_count: usize,
+    is_filtered: bool,
 ) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(" Services ", Style::default().fg(Color::White)),
+    let mut spans = vec![
         Span::styled(
-            format!("{}/{} running", running_count, total_count),
-            Style::default().fg(Color::Green),
+            " SERVICES ",
+            Style::new().fg(theme::TEXT).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("  ↻ {} boot", auto_restart_count),
-            Style::default().fg(Color::Cyan),
+            format!("{running_count}/{total_count} UP"),
+            Style::new().fg(theme::RUNNING),
         ),
-    ])
-}
+    ];
 
-fn selected_style(app: &App) -> Style {
-    if let Some(index) = app.state.selected() {
-        let status = app.services[index].status();
-        if matches!(
-            status,
-            Status::Starting | Status::Stopping | Status::Pulling
-        ) {
-            let bg = if (app.animation_tick / 3).is_multiple_of(2) {
-                Color::Yellow
-            } else {
-                Color::LightYellow
-            };
-            return Style::default()
-                .fg(Color::Black)
-                .bg(bg)
-                .add_modifier(Modifier::BOLD);
-        }
+    if auto_restart_count > 0 {
+        spans.push(Span::styled(
+            format!("  {auto_restart_count} ↻"),
+            Style::new().fg(theme::ACCENT),
+        ));
     }
 
-    Style::default()
-        .fg(Color::Black)
-        .bg(Color::Blue)
-        .add_modifier(Modifier::BOLD)
+    if is_filtered && filtered_count < total_count {
+        spans.push(Span::styled(
+            format!("  {filtered_count}/{total_count} shown"),
+            Style::new().fg(theme::TRANSITION),
+        ));
+    }
+
+    Line::from(spans)
+}
+
+fn status_label(status: &Status) -> &'static str {
+    match status {
+        Status::Running => "RUNNING",
+        Status::Stopped => "STOPPED",
+        Status::Starting => "STARTING",
+        Status::Stopping => "STOPPING",
+        Status::Pulling => "PULLING",
+        Status::Error => "ERROR",
+        Status::DaemonNotRunning => "NO DAEMON",
+    }
 }
 
 fn status_indicator(status: &Status, tick: u64) -> &'static str {
@@ -155,8 +214,42 @@ fn status_indicator(status: &Status, tick: u64) -> &'static str {
             const FRAMES: [&str; 4] = ["◟", "◡", "◞", "◜"];
             FRAMES[((tick / 2) % FRAMES.len() as u64) as usize]
         }
-        Status::Stopped => "○",
-        Status::Error => "✖",
-        Status::DaemonNotRunning => "○",
+        Status::Stopped | Status::DaemonNotRunning => "○",
+        Status::Error => "×",
+    }
+}
+
+fn truncate(value: &str, max_width: usize) -> String {
+    let char_count = value.chars().count();
+    if char_count <= max_width {
+        return value.to_string();
+    }
+    if max_width <= 1 {
+        return "…".chars().take(max_width).collect();
+    }
+
+    let mut truncated: String = value.chars().take(max_width - 1).collect();
+    truncated.push('…');
+    truncated
+}
+
+fn pad_right(mut value: String, width: usize) -> String {
+    let padding = width.saturating_sub(value.chars().count());
+    value.extend(std::iter::repeat_n(' ', padding));
+    value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_preserves_short_names() {
+        assert_eq!(truncate("redis", 8), "redis");
+    }
+
+    #[test]
+    fn truncate_marks_clipped_names() {
+        assert_eq!(truncate("postgresql", 6), "postg…");
     }
 }

@@ -1,9 +1,8 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Text},
-    widgets::{Block, Borders},
 };
 
 use crate::app::{App, Focus, LogTab};
@@ -15,13 +14,10 @@ use colorize::{colorize_events, colorize_logs};
 use progress::{event_progress_line, placeholder_text};
 use title::logs_title;
 
+use super::theme;
+
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
     let title = logs_title(app);
-    let border_color = if app.focus == Focus::Logs {
-        Color::Blue
-    } else {
-        Color::White
-    };
     let progress_line = refresh_logs_cache(app);
     let progress_line_count = if progress_line.is_some() { 2 } else { 0 };
     let total_lines = app
@@ -34,15 +30,12 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         app.log_scroll = total_lines.saturating_sub(visible_lines);
     }
 
-    let block = Block::default()
-        .title(title)
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+    let block = theme::panel(title, app.focus == Focus::Logs);
     let body_area = block.inner(area);
     frame.render_widget(block, area);
     frame
         .buffer_mut()
-        .set_style(body_area, Style::default().fg(Color::Gray));
+        .set_style(body_area, Style::new().fg(theme::TEXT));
 
     render_log_lines(
         frame,
@@ -58,7 +51,7 @@ fn refresh_logs_cache(app: &mut App) -> Option<Line<'static>> {
         if app.logs_render_cache.service_index.is_some()
             || app.logs_render_cache.body_line_count == 0
         {
-            let (body, body_line_count) = placeholder_text("Select a service to view logs");
+            let (body, body_line_count) = placeholder_text("Select a service to view activity");
             app.logs_render_cache = crate::app::state::LogsRenderCache {
                 service_index: None,
                 tab: app.log_tab,
@@ -92,14 +85,14 @@ fn refresh_logs_cache(app: &mut App) -> Option<Line<'static>> {
         let body = match app.log_tab {
             LogTab::Events => {
                 if logs_snapshot.is_empty() {
-                    placeholder_text("No events yet - start the service to see events").0
+                    placeholder_text("No events yet — start the service").0
                 } else {
                     colorize_events(&logs_snapshot)
                 }
             }
             LogTab::LiveLogs => {
                 if logs_snapshot.is_empty() {
-                    placeholder_text("No live logs yet - start the service to see logs").0
+                    placeholder_text("No live logs yet — start the service").0
                 } else {
                     colorize_logs(&logs_snapshot)
                 }
@@ -200,6 +193,8 @@ mod tests {
                     switch_tab_right: "]".to_string(),
                     scroll_down: "j".to_string(),
                     scroll_up: "k".to_string(),
+                    focus_services: "h".to_string(),
+                    focus_logs: "l".to_string(),
                 },
                 services: ServicesKeys {
                     toggle: "s".to_string(),

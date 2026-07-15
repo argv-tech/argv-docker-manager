@@ -6,6 +6,8 @@ pub(super) struct Keys {
     pub daemon: char,
     pub scroll_down: char,
     pub scroll_up: char,
+    pub focus_services: char,
+    pub focus_logs: char,
     pub switch_tab_left: char,
     pub switch_tab_right: char,
     pub service_toggle: char,
@@ -22,6 +24,14 @@ impl Keys {
             daemon: app.keybinds.app.daemon_menu.chars().next().unwrap_or('d'),
             scroll_down: app.keybinds.app.scroll_down.chars().next().unwrap_or('j'),
             scroll_up: app.keybinds.app.scroll_up.chars().next().unwrap_or('k'),
+            focus_services: app
+                .keybinds
+                .app
+                .focus_services
+                .chars()
+                .next()
+                .unwrap_or('h'),
+            focus_logs: app.keybinds.app.focus_logs.chars().next().unwrap_or('l'),
             switch_tab_left: app
                 .keybinds
                 .app

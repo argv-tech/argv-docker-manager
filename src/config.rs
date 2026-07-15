@@ -19,6 +19,10 @@ pub struct AppKeys {
     pub switch_tab_right: String,
     pub scroll_down: String,
     pub scroll_up: String,
+    #[serde(default = "default_focus_services_key")]
+    pub focus_services: String,
+    #[serde(default = "default_focus_logs_key")]
+    pub focus_logs: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -35,6 +39,14 @@ pub struct LogsKeys {
 
 fn default_auto_restart_key() -> String {
     "a".to_string()
+}
+
+fn default_focus_services_key() -> String {
+    "h".to_string()
+}
+
+fn default_focus_logs_key() -> String {
+    "l".to_string()
 }
 
 impl Keybinds {

@@ -7,6 +7,8 @@ switch_tab_left = "t"
 switch_tab_right = "T"
 scroll_down = "j"
 scroll_up = "k"
+focus_services = "h"
+focus_logs = "l"
 
 [services]
 toggle = "s"

@@ -56,7 +56,7 @@ impl App {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Info,
-                    message: "Welcome to Docker Manager".to_string(),
+                    message: "ARGV Docker Manager is ready".to_string(),
                 }),
                 3,
             )

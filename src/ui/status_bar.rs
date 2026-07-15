@@ -2,7 +2,7 @@ use chrono::Local;
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -10,90 +10,81 @@ use ratatui::{
 use crate::app::App;
 use crate::status::Status;
 
-pub fn render(frame: &mut Frame, app: &App, area: Rect) {
-    let now = Local::now();
-    let daemon_dot = if app.docker_daemon_running {
-        "●"
-    } else {
-        "○"
-    };
+use super::theme;
 
+pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let running_services = app
         .services
         .iter()
         .filter(|service| service.status() == Status::Running)
         .count();
-    let total_services = app.services.len();
+    let workspace = app
+        .project_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace");
 
-    let docker_status_text = if app.docker_daemon_running {
-        format!("{} Daemon: running", daemon_dot)
-    } else {
-        format!("{} Daemon: stopped", daemon_dot)
-    };
-    let docker_status_color = if app.docker_daemon_running {
-        Color::Green
-    } else {
-        Color::Red
-    };
-
-    let docker_cli_text = if app.docker_command_available {
-        "● Docker CLI OK"
-    } else {
-        "● Docker CLI N/A"
-    };
-    let docker_cli_color = if app.docker_command_available {
-        Color::Green
-    } else {
-        Color::Red
-    };
-
-    let docker_compose_text = if app.docker_compose_available {
-        "Compose: ok"
-    } else {
-        "Compose: n/a"
-    };
-    let docker_compose_color = if app.docker_compose_available {
-        Color::Green
-    } else {
-        Color::Red
-    };
-
-    let status_line = Line::from(vec![
+    let identity = Line::from(vec![
+        Span::styled("◆", Style::new().fg(theme::BRAND)),
         Span::styled(
-            "docker-manager",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+            " ARGV  DOCKER MANAGER",
+            Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" ", Style::default().fg(Color::DarkGray)),
-        Span::styled("v0.1.0", Style::default().fg(Color::Gray)),
-        Span::styled("  |  ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{}", now.format("%H:%M:%S")),
-            Style::default().fg(Color::Gray),
+            format!("  v{}", env!("CARGO_PKG_VERSION")),
+            Style::new().fg(theme::MUTED),
         ),
-        Span::styled("  |  ", Style::default().fg(Color::DarkGray)),
-        Span::styled(docker_status_text, Style::default().fg(docker_status_color)),
-        Span::styled("  |  ", Style::default().fg(Color::DarkGray)),
-        Span::styled(docker_cli_text, Style::default().fg(docker_cli_color)),
-        Span::styled("  |  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("  /  ", Style::new().fg(theme::MUTED)),
+        Span::styled(workspace.to_string(), Style::new().fg(theme::TEXT)),
+        Span::styled("  /  ", Style::new().fg(theme::MUTED)),
         Span::styled(
-            docker_compose_text,
-            Style::default().fg(docker_compose_color),
-        ),
-        Span::styled("  |  ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            format!("Services: {}/{} running", running_services, total_services),
-            Style::default().fg(Color::White),
+            Local::now().format("%H:%M").to_string(),
+            Style::new().fg(theme::TEXT),
         ),
     ]);
 
-    let status_bar = Paragraph::new(status_line).block(
-        Block::default()
-            .title(" Overview ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan)),
-    );
+    let health = Line::from(vec![
+        signal("DAEMON", app.docker_daemon_running),
+        Span::raw("  "),
+        signal("CLI", app.docker_command_available),
+        Span::raw("  "),
+        signal("COMPOSE", app.docker_compose_available),
+        Span::styled("  │  ", Style::new().fg(theme::MUTED)),
+        Span::styled(
+            format!("{running_services}/{} RUNNING", app.services.len()),
+            Style::new().fg(if running_services > 0 {
+                theme::RUNNING
+            } else {
+                theme::TEXT
+            }),
+        ),
+        Span::styled(
+            format!("  {} AUTO-START", app.auto_restart.len()),
+            Style::new().fg(if app.auto_restart.len() == 0 {
+                theme::MUTED
+            } else {
+                theme::ACCENT
+            }),
+        ),
+    ]);
 
-    frame.render_widget(status_bar, area);
+    let header = Paragraph::new(vec![identity, health]).block(
+        Block::new()
+            .borders(Borders::BOTTOM)
+            .border_style(Style::new().fg(theme::MUTED)),
+    );
+    frame.render_widget(header, area);
+}
+
+fn signal(label: &'static str, available: bool) -> Span<'static> {
+    let (symbol, state, color) = if available {
+        ("●", "READY", theme::RUNNING)
+    } else {
+        ("×", "DOWN", theme::ERROR)
+    };
+
+    Span::styled(
+        format!("{symbol} {label} {state}"),
+        Style::new().fg(color).add_modifier(Modifier::BOLD),
+    )
 }

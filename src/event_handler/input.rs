@@ -34,7 +34,6 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
                 app.daemon_menu_mode = false;
                 app.search_query.clear();
                 app.password_input.clear();
-                app.state.select(Some(0));
             }
         }
         KeyCode::Enter => {
@@ -79,10 +78,14 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
 
 fn handle_normal_mode(app: &mut App, code: KeyCode, keys: &Keys) {
     match code {
+        KeyCode::Char(c) if c == keys.focus_services => app.focus = Focus::Services,
+        KeyCode::Char(c) if c == keys.focus_logs => app.focus = Focus::Logs,
         KeyCode::Char(c) if c == keys.scroll_down => move_down(app),
         KeyCode::Down => move_down(app),
         KeyCode::Char(c) if c == keys.scroll_up => move_up(app),
         KeyCode::Up => move_up(app),
+        KeyCode::PageDown if app.focus == Focus::Logs => scroll_logs(app, 10),
+        KeyCode::PageUp if app.focus == Focus::Logs => scroll_logs(app, -10),
         KeyCode::Tab => {
             if app.focus == Focus::Services {
                 app.next();
@@ -146,6 +149,15 @@ fn move_up(app: &mut App) {
         app.log_scroll = app.log_scroll.saturating_sub(1);
         app.log_auto_scroll = false;
     }
+}
+
+fn scroll_logs(app: &mut App, amount: i16) {
+    app.log_scroll = if amount.is_negative() {
+        app.log_scroll.saturating_sub(amount.unsigned_abs())
+    } else {
+        app.log_scroll.saturating_add(amount as u16)
+    };
+    app.log_auto_scroll = false;
 }
 
 fn toggle_log_tab(app: &mut App) {

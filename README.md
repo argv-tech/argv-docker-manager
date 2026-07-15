@@ -1,19 +1,19 @@
 > NOTICE: containers are not production
 
 # Table of Contents
-- [Docker Manager](#docker-manager)
+- [ARGV Docker Manager](#argv-docker-manager)
 - [Available Containers](#available-containers)
 - [Contributing](#contributing)
 - [init.tmux - Automated Setup](#inittmux---automated-setup)
 - [run.sh Usage](#runsh-usage)
 
-# Docker Compose Manager
+# ARGV Docker Manager
 
 This repository provides a collection of docker-compose.yml configurations for development purposes and a Rust-based terminal UI application for interactively managing Docker Compose services.
 
-## Docker Manager
+## ARGV Docker Manager
 
-The Docker Manager (v0.2.0) is a Rust-based terminal user interface (TUI) application for interactively managing Docker Compose services.
+ARGV Docker Manager (`argv-docker-manager`) is a Rust terminal interface for managing the Docker Compose projects in this repository.
 
 ### Features
 - Interactive selection and management of Docker Compose services
@@ -38,16 +38,17 @@ The Docker Manager (v0.2.0) is a Rust-based terminal user interface (TUI) applic
    ```
 3. Run the manager:
    ```bash
-   ./target/release/docker-manager
+   ./target/release/argv-docker-manager
    ```
 
 **Alternative:** If Rust or Cargo is not available, use the `run.sh` script for interactive container management.
 
 ### Usage
-The application displays the app name and version in the bottom right corner.
+The top status rail shows the app version, Docker health, running-project count, and auto-start count.
 
 **Navigation:**
-- `Tab` / `Shift+Tab`: Navigate between Services and Logs panes
+- `Tab` / `Shift+Tab`: Select the next / previous service
+- `h` / `l`: Focus Services / Logs
 
 **Services Pane:**
 - `j` / `k`: Scroll through services
@@ -72,12 +73,12 @@ Services are loaded from the `containers/` directory.
 
 ### Auto-restart selected services after reboot
 
-Auto-restart is opt-in per Compose project. In the Services pane, select a project and press `a` to toggle it. The selected names are stored in the git-ignored `.docker-manager-autorestart.toml` file in this clone.
+Auto-restart is opt-in per Compose project. In the Services pane, select a project and press `a` to toggle it. The selected names are stored in the git-ignored `.argv-docker-manager-autorestart.toml` file in this clone. Existing `.docker-manager-autorestart.toml` selections are still read for migration.
 
 After choosing services, install the boot unit once:
 
 ```bash
-./target/release/docker-manager --install-auto-restart
+./target/release/argv-docker-manager --install-auto-restart
 ```
 
 The installer asks for sudo access, generates a systemd unit with absolute paths to the current release binary and repository clone, enables it for `multi-user.target`, and does not start any unselected projects. This makes the unit work when the repository is cloned at a different path on another machine: build there and run the installer from that clone.
@@ -87,8 +88,8 @@ Re-run the installer after moving the clone or changing the binary location. Cha
 To inspect the generated unit after installation, use the unit name printed by the installer:
 
 ```bash
-systemctl status docker-manager-autorestart.service
-journalctl -u docker-manager-autorestart.service
+systemctl status argv-docker-manager-autorestart.service
+journalctl -u argv-docker-manager-autorestart.service
 ```
 
 ## Available Containers

@@ -3,3 +3,5 @@ target/
 /containers/mailpit/data
 .docker-manager-autorestart.toml
 .docker-manager-autorestart.toml.tmp
+.argv-docker-manager-autorestart.toml
+.argv-docker-manager-autorestart.toml.tmp

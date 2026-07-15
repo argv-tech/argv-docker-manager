@@ -8,6 +8,22 @@ All notable changes to this project will be documented in this file.
 
 - Add persistent per-project auto-restart selection and a dynamically generated systemd boot unit
 - Make `s` toggle the selected service while keeping log auto-scroll on `Space`
+- Redesign the TUI with responsive panes, operational status signals, and contextual controls
+- Rename the application and generated boot service to `argv-docker-manager`
+- Tighten interaction layer: case-insensitive search, page scrolling, compact key labels, scroll position feedback
+
+### 🎨 UI/UX
+
+- Polish progress bars with block characters (█/░) instead of ASCII (#/-)
+- Show filter count in services title when filtering ("3 of 12 shown")
+- Improve empty state messages with action hints ("Esc to clear")
+- Draw │ separator between services and logs panels on wide terminals
+- Mute AUTO-START count in status bar when zero
+- Dim unavailable daemon actions (Start when running, Stop when stopped)
+- Use configured keybinds in daemon menu hints instead of hardcoded j/k
+- Fix Esc closing overlays without resetting service selection
+- Style consistency: use Style::new() throughout overlays
+- Improve log placeholder text with dash em-dash and clearer wording
 
 ## [0.2.0] - 2026-02-24
 

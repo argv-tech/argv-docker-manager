@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::docker::compose::ComposeProject;
 
-const CONFIG_FILE: &str = ".docker-manager-autorestart.toml";
+const CONFIG_FILE: &str = ".argv-docker-manager-autorestart.toml";
+const LEGACY_CONFIG_FILE: &str = ".docker-manager-autorestart.toml";
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AutoRestartConfig {
@@ -18,10 +19,20 @@ pub struct AutoRestartConfig {
 impl AutoRestartConfig {
     pub fn load(project_root: &Path) -> Result<Self> {
         let path = config_path(project_root);
-        let content = match fs::read_to_string(&path) {
-            Ok(content) => content,
+        let (path, content) = match fs::read_to_string(&path) {
+            Ok(content) => (path, content),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Self::default());
+                let legacy_path = legacy_config_path(project_root);
+                match fs::read_to_string(&legacy_path) {
+                    Ok(content) => (legacy_path, content),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        return Ok(Self::default());
+                    }
+                    Err(error) => {
+                        return Err(error)
+                            .with_context(|| format!("failed to read {}", legacy_path.display()));
+                    }
+                }
             }
             Err(error) => {
                 return Err(error).with_context(|| format!("failed to read {}", path.display()));
@@ -89,6 +100,10 @@ pub fn config_path(project_root: &Path) -> PathBuf {
     project_root.join(CONFIG_FILE)
 }
 
+fn legacy_config_path(project_root: &Path) -> PathBuf {
+    project_root.join(LEGACY_CONFIG_FILE)
+}
+
 fn temporary_config_path(project_root: &Path) -> PathBuf {
     project_root.join(format!("{CONFIG_FILE}.tmp"))
 }
@@ -132,7 +147,7 @@ mod tests {
     use super::*;
 
     fn temporary_project(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("docker-manager-{name}-{}", std::process::id()))
+        std::env::temp_dir().join(format!("argv-docker-manager-{name}-{}", std::process::id()))
     }
 
     #[test]
@@ -159,6 +174,22 @@ mod tests {
         let enabled = config.toggle("redis");
 
         assert!(!enabled);
+    }
+
+    #[test]
+    fn legacy_selection_is_loaded_when_new_config_is_missing() {
+        let project_root = temporary_project("legacy-config");
+        fs::create_dir_all(&project_root).unwrap();
+        fs::write(
+            legacy_config_path(&project_root),
+            "services = [\"redis\"]\n",
+        )
+        .unwrap();
+
+        let loaded = AutoRestartConfig::load(&project_root).unwrap();
+        let _ = fs::remove_dir_all(&project_root);
+
+        assert!(loaded.contains("redis"));
     }
 
     #[test]

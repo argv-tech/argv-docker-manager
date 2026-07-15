@@ -8,16 +8,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 
 const SYSTEMD_UNIT_DIR: &str = "/etc/systemd/system";
-const UNIT_NAME: &str = "docker-manager-autorestart.service";
+const UNIT_NAME: &str = "argv-docker-manager-autorestart.service";
 
 pub fn install_auto_restart_unit(project_root: &Path) -> Result<String> {
     let project_root = project_root
         .canonicalize()
         .with_context(|| format!("failed to resolve {}", project_root.display()))?;
     let executable = std::env::current_exe()
-        .context("failed to locate docker-manager executable")?
+        .context("failed to locate argv-docker-manager executable")?
         .canonicalize()
-        .context("failed to resolve docker-manager executable")?;
+        .context("failed to resolve argv-docker-manager executable")?;
     let user = service_user()?;
     let unit_name = UNIT_NAME;
     let content = render_unit(&executable, &project_root, &user)?;
@@ -53,7 +53,7 @@ fn render_unit(executable: &Path, project_root: &Path, user: &str) -> Result<Str
 
     Ok(format!(
         "[Unit]\n\
-         Description=Start Docker Manager selected projects\n\
+         Description=Start ARGV Docker Manager selected projects\n\
          Requires=docker.service\n\
          After=docker.service network-online.target\n\
          Wants=network-online.target\n\
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn generated_unit_uses_dynamic_absolute_paths() {
         let unit = render_unit(
-            Path::new("/opt/my tools/docker-manager"),
+            Path::new("/opt/my tools/argv-docker-manager"),
             Path::new("/srv/compose clone"),
             "alice",
         )
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(
             unit,
             "[Unit]\n\
-             Description=Start Docker Manager selected projects\n\
+             Description=Start ARGV Docker Manager selected projects\n\
              Requires=docker.service\n\
              After=docker.service network-online.target\n\
              Wants=network-online.target\n\
@@ -181,7 +181,7 @@ mod tests {
              Type=oneshot\n\
              User=alice\n\
              WorkingDirectory=\"/srv/compose clone\"\n\
-             ExecStart=\"/opt/my tools/docker-manager\" --auto-restart \"/srv/compose clone\"\n\
+             ExecStart=\"/opt/my tools/argv-docker-manager\" --auto-restart \"/srv/compose clone\"\n\
              RemainAfterExit=yes\n\
              \n\
              [Install]\n\
@@ -192,12 +192,12 @@ mod tests {
     #[test]
     fn generated_unit_escapes_systemd_specifiers() {
         let unit = render_unit(
-            Path::new("/opt/100%/docker-manager"),
+            Path::new("/opt/100%/argv-docker-manager"),
             Path::new("/srv/compose"),
             "alice",
         )
         .unwrap();
 
-        assert!(unit.contains("ExecStart=\"/opt/100%%/docker-manager\""));
+        assert!(unit.contains("ExecStart=\"/opt/100%%/argv-docker-manager\""));
     }
 }

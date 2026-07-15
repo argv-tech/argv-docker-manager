@@ -31,11 +31,26 @@ impl App {
                     4,
                 );
             } else {
-                self.set_toast(
-                    ToastState::Warning,
-                    format!("Enabled for {service_name}; install the boot unit once"),
-                    5,
-                );
+                match systemd::install_auto_restart_unit(&self.project_root) {
+                    Ok(_) => {
+                        self.set_toast(
+                            ToastState::Success,
+                            format!(
+                                "Auto-restart enabled for {service_name} (boot unit installed)"
+                            ),
+                            5,
+                        );
+                    }
+                    Err(error) => {
+                        self.set_toast(
+                            ToastState::Warning,
+                            format!(
+                                "Enabled for {service_name}; install boot unit manually: {error}"
+                            ),
+                            6,
+                        );
+                    }
+                }
             }
         } else {
             self.set_toast(

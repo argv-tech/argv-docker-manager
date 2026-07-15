@@ -39,11 +39,23 @@ jobs:
           cat RELEASE_NOTES.md
           echo "------------------"
 
+      - name: Detect hotfix
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+            echo "hotfix=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hotfix=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: "ARGV Docker Manager ${{ github.ref_name }}"
           body_path: RELEASE_NOTES.md
+          prerelease: ${{ steps.version.outputs.hotfix }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

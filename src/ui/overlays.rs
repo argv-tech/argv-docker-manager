@@ -3,10 +3,12 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Clear, List, ListItem, Paragraph},
 };
 
 use crate::app::{App, DaemonAction};
+
+use super::theme;
 
 pub fn render(frame: &mut Frame, app: &App) {
     if app.daemon_menu_mode {
@@ -18,16 +20,22 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 
     if let Some(toast) = &app.toast {
+        let frame_area = frame.area();
+        let width = frame_area.width.saturating_sub(2).min(50);
         let area = Rect {
-            x: frame.area().width.saturating_sub(51),
-            y: 1,
-            width: 50,
-            height: 3,
+            x: frame_area
+                .x
+                .saturating_add(frame_area.width.saturating_sub(width).saturating_sub(1)),
+            y: frame_area.y.saturating_add(1),
+            width,
+            height: frame_area.height.min(3),
         };
-        frame.render_widget(
-            crate::toast::create_toast_widget(toast, app.animation_tick),
-            area,
-        );
+        if area.width > 0 && area.height > 0 {
+            frame.render_widget(
+                crate::toast::create_toast_widget(toast, app.animation_tick),
+                area,
+            );
+        }
     }
 }
 
@@ -35,14 +43,13 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
     let area = centered_rect(72, 14, frame.area());
     frame.render_widget(Clear, area);
 
-    let popup = Block::default()
-        .title(" Daemon Control ")
-        .borders(Borders::ALL)
-        .border_style(
-            Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-        );
+    let popup = theme::panel(
+        Line::from(Span::styled(
+            " DAEMON CONTROL ",
+            Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+        )),
+        true,
+    );
 
     let inner = popup.inner(area);
     frame.render_widget(popup, area);
@@ -56,12 +63,10 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
 
     let (status_label, status_color) = daemon_status_style(app);
     let status_line = Line::from(vec![
-        Span::styled("Docker status: ", Style::default().fg(Color::Gray)),
+        Span::styled("Docker status: ", Style::new().fg(Color::Gray)),
         Span::styled(
             status_label,
-            Style::default()
-                .fg(status_color)
-                .add_modifier(Modifier::BOLD),
+            Style::new().fg(status_color).add_modifier(Modifier::BOLD),
         ),
     ]);
 
@@ -75,11 +80,20 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
     let items: Vec<ListItem> = actions
         .iter()
         .map(|action| {
+            let unavailable = matches!(
+                (action, app.docker_daemon_running),
+                (DaemonAction::Start, true) | (DaemonAction::Stop, false)
+            );
+            let (label_color, desc_color) = if unavailable {
+                (Color::DarkGray, Color::DarkGray)
+            } else {
+                (Color::White, Color::DarkGray)
+            };
             ListItem::new(Line::from(vec![
-                Span::styled(action_label(*action), Style::default().fg(Color::White)),
+                Span::styled(action_label(*action), Style::new().fg(label_color)),
                 Span::styled(
                     format!("  - {}", action_description(*action)),
-                    Style::default().fg(Color::DarkGray),
+                    Style::new().fg(desc_color),
                 ),
             ]))
         })
@@ -95,25 +109,22 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
     state.select(Some(selected_index));
 
     let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray)),
-        )
+        .block(theme::panel(Line::from(" ACTIONS "), false))
         .highlight_style(
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Blue)
+            Style::new()
+                .bg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol("-> ");
+        .highlight_symbol("▌ ");
 
     frame.render_stateful_widget(list, list_area, &mut state);
 
+    let scroll_key = &app.keybinds.app.scroll_down;
+    let hints = format!("{scroll_key}/k or ↓/↑: move   Enter: continue   Esc: cancel");
     frame.render_widget(
-        Paragraph::new("j/k or Up/Down: move   Enter: continue   Esc: cancel")
+        Paragraph::new(hints)
             .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::DarkGray)),
+            .style(Style::new().fg(Color::DarkGray)),
         hints_area,
     );
 }
@@ -122,14 +133,13 @@ fn render_password_prompt(frame: &mut Frame, app: &App) {
     let area = centered_rect(72, 10, frame.area());
     frame.render_widget(Clear, area);
 
-    let popup = Block::default()
-        .title(" Confirm Daemon Action ")
-        .borders(Borders::ALL)
-        .border_style(
-            Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-        );
+    let popup = theme::panel(
+        Line::from(Span::styled(
+            " CONFIRM DAEMON ACTION ",
+            Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+        )),
+        true,
+    );
     let inner = popup.inner(area);
     frame.render_widget(popup, area);
 
@@ -148,12 +158,10 @@ fn render_password_prompt(frame: &mut Frame, app: &App) {
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("Action: ", Style::default().fg(Color::Gray)),
+            Span::styled("Action: ", Style::new().fg(Color::Gray)),
             Span::styled(
                 title,
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
+                Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             ),
         ])),
         action_area,
@@ -170,23 +178,18 @@ fn render_password_prompt(frame: &mut Frame, app: &App) {
         Paragraph::new(input_text)
             .alignment(Alignment::Left)
             .style(if app.password_input.is_empty() {
-                Style::default().fg(Color::DarkGray)
+                Style::new().fg(Color::DarkGray)
             } else {
-                Style::default().fg(Color::White)
+                Style::new().fg(Color::White)
             })
-            .block(
-                Block::default()
-                    .title(" Password ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            ),
+            .block(theme::panel(Line::from(" PASSWORD "), false)),
         input_area,
     );
 
     frame.render_widget(
         Paragraph::new("Enter: run action   Esc: cancel")
             .alignment(Alignment::Left)
-            .style(Style::default().fg(Color::DarkGray)),
+            .style(Style::new().fg(Color::DarkGray)),
         hints_area,
     );
 }
@@ -216,6 +219,8 @@ fn daemon_status_style(app: &App) -> (&'static str, Color) {
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let width = width.min(area.width.saturating_sub(2)).max(1);
+    let height = height.min(area.height.saturating_sub(2)).max(1);
     let [_, vertical, _] = Layout::vertical([
         Constraint::Length(area.height.saturating_sub(height) / 2),
         Constraint::Length(height),

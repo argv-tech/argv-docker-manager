@@ -7,11 +7,12 @@ switch_tab_left = "t"
 switch_tab_right = "T"
 scroll_down = "j"
 scroll_up = "k"
+focus_services = "h"
+focus_logs = "l"
 
 [services]
-stop = "s"
-start = "S"
-toggle = " "
+toggle = "s"
+auto_restart = "a"
 
 [logs]
 toggle_auto_scroll = " "

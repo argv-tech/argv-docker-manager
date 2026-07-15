@@ -1,134 +1,122 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::App;
+use crate::app::{App, Focus};
 
-pub fn render(frame: &mut Frame, app: &App, help_area: Rect) {
-    let controls = controls_line(app);
-    let border_color = if app.search_mode {
-        Color::Yellow
+use super::theme;
+
+pub fn render(frame: &mut Frame, app: &App, area: Rect) {
+    let mode = if app.search_mode {
+        " FILTER "
+    } else if app.focus == Focus::Services {
+        " SERVICES "
     } else {
-        Color::DarkGray
+        " ACTIVITY "
     };
+    let controls = Paragraph::new(controls_line(app)).block(
+        Block::new()
+            .borders(Borders::TOP)
+            .border_style(Style::new().fg(theme::MUTED))
+            .title(Span::styled(
+                mode,
+                Style::new()
+                    .fg(if app.search_mode {
+                        theme::TRANSITION
+                    } else {
+                        theme::FOCUS
+                    })
+                    .add_modifier(Modifier::BOLD),
+            )),
+    );
 
-    let controls_widget = Paragraph::new(controls)
-        .block(
-            Block::default()
-                .title(" Controls ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(border_color)),
-        )
-        .style(Style::default().fg(Color::Gray));
-
-    frame.render_widget(controls_widget, help_area);
+    frame.render_widget(controls, area);
 }
 
 fn controls_line(app: &App) -> Line<'static> {
-    let app_keys = &app.keybinds.app;
-    let service_keys = &app.keybinds.services;
-    let log_keys = &app.keybinds.logs;
-
-    let mut spans = Vec::new();
-    push_key(&mut spans, "Quit", app_keys.quit.clone(), Color::Red);
-    spans.push(sep());
-    push_key(&mut spans, "Refresh", app_keys.refresh.clone(), Color::Cyan);
-    spans.push(sep());
-    push_key(&mut spans, "Search", app_keys.search.clone(), Color::Yellow);
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Daemon",
-        app_keys.daemon_menu.clone(),
-        Color::Magenta,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Stop",
-        service_keys.stop.clone(),
-        Color::LightRed,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Start",
-        service_keys.start.clone(),
-        Color::LightGreen,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Toggle",
-        service_keys.toggle.clone(),
-        Color::Blue,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Down",
-        app_keys.scroll_down.clone(),
-        Color::LightBlue,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Up",
-        app_keys.scroll_up.clone(),
-        Color::LightBlue,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Auto",
-        log_keys.toggle_auto_scroll.clone(),
-        Color::Green,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Tab<-",
-        app_keys.switch_tab_left.clone(),
-        Color::LightYellow,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Tab->",
-        app_keys.switch_tab_right.clone(),
-        Color::LightYellow,
-    );
-
     if app.search_mode {
-        spans.push(sep());
-        spans.push(Span::styled(
-            "Search: Enter=select Esc=cancel",
-            Style::default().fg(Color::Yellow),
-        ));
+        return command_line([
+            ("Enter".to_string(), "select"),
+            ("Esc".to_string(), "cancel"),
+            ("type".to_string(), "filter projects"),
+        ]);
     }
 
+    let app_keys = &app.keybinds.app;
+    let navigation_key = format!("{}/{}", app_keys.scroll_down, app_keys.scroll_up);
+
+    if app.focus == Focus::Services {
+        command_line([
+            (app.keybinds.services.toggle.clone(), "start/stop"),
+            (app.keybinds.services.auto_restart.clone(), "auto-start"),
+            (app_keys.search.clone(), "filter"),
+            (navigation_key, "move"),
+            (app_keys.focus_logs.clone(), "activity"),
+            (app_keys.daemon_menu.clone(), "daemon"),
+            (app_keys.quit.clone(), "quit"),
+        ])
+    } else {
+        command_line([
+            (app.keybinds.logs.toggle_auto_scroll.clone(), "auto-scroll"),
+            (
+                format!("{}/{}", app_keys.switch_tab_left, app_keys.switch_tab_right),
+                "view",
+            ),
+            (navigation_key, "scroll"),
+            (app_keys.focus_services.clone(), "services"),
+            (app_keys.refresh.clone(), "refresh"),
+            (app_keys.quit.clone(), "quit"),
+        ])
+    }
+}
+
+fn command_line<const N: usize>(commands: [(String, &'static str); N]) -> Line<'static> {
+    let mut spans = Vec::with_capacity(commands.len() * 4);
+    for (index, (key, label)) in commands.into_iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::styled("  ", Style::new().fg(theme::MUTED)));
+        }
+        let key = key_name(key);
+        spans.push(Span::styled(
+            format!(" {key} "),
+            Style::new()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED),
+        ));
+        spans.push(Span::styled(
+            format!(" {label}"),
+            Style::new().fg(theme::TEXT),
+        ));
+    }
     Line::from(spans)
 }
 
-fn push_key(spans: &mut Vec<Span<'static>>, label: &str, value: String, color: Color) {
-    spans.push(Span::styled(
-        format!("{} ", label),
-        Style::default().fg(color),
-    ));
-    spans.push(Span::styled("[", Style::default().fg(Color::DarkGray)));
-    spans.push(Span::styled(
-        value,
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    ));
-    spans.push(Span::styled("]", Style::default().fg(Color::DarkGray)));
+fn key_name(key: String) -> String {
+    if key == " " { "Space".to_string() } else { key }
 }
 
-fn sep() -> Span<'static> {
-    Span::styled(" · ", Style::default().fg(Color::DarkGray))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_line_keeps_key_and_label_order() {
+        let line = command_line([("s".to_string(), "start/stop"), ("q".to_string(), "quit")]);
+        let text: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+
+        assert_eq!(text, " s  start/stop   q  quit");
+    }
+
+    #[test]
+    fn space_binding_has_a_visible_label() {
+        assert_eq!(key_name(" ".to_string()), "Space");
+    }
 }

@@ -1,7 +1,9 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Output, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
+
+use crate::service::SharedLogBuffer;
 
 type LineCallback = Arc<dyn Fn(&str) + Send + Sync + 'static>;
 
@@ -11,7 +13,7 @@ pub fn run_capture(mut cmd: Command) -> std::io::Result<Output> {
 
 pub fn run_stream(
     cmd: Command,
-    logs: Arc<Mutex<String>>,
+    logs: SharedLogBuffer,
     header: Option<&str>,
 ) -> std::io::Result<bool> {
     run_stream_with_line_callback(cmd, logs, header, None)
@@ -19,7 +21,7 @@ pub fn run_stream(
 
 pub fn run_stream_with_line_callback(
     mut cmd: Command,
-    logs: Arc<Mutex<String>>,
+    logs: SharedLogBuffer,
     header: Option<&str>,
     on_line: Option<LineCallback>,
 ) -> std::io::Result<bool> {
@@ -38,8 +40,7 @@ pub fn run_stream_with_line_callback(
             let reader = BufReader::new(stdout);
             for line in reader.lines().map_while(Result::ok) {
                 let mut logs_lock = logs_stdout.lock().unwrap();
-                logs_lock.push_str(&line);
-                logs_lock.push('\n');
+                logs_lock.push_line(&line);
                 if let Some(callback) = &on_line_stdout {
                     callback(&line);
                 }
@@ -54,8 +55,7 @@ pub fn run_stream_with_line_callback(
             let reader = BufReader::new(stderr);
             for line in reader.lines().map_while(Result::ok) {
                 let mut logs_lock = logs_stderr.lock().unwrap();
-                logs_lock.push_str(&line);
-                logs_lock.push('\n');
+                logs_lock.push_line(&line);
                 if let Some(callback) = &on_line_stderr {
                     callback(&line);
                 }

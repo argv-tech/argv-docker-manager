@@ -1,20 +1,34 @@
-use std::sync::{Arc, Mutex};
+use std::path::Path;
 
 use crate::app::state::{App, DaemonAction, Focus, LogTab};
+use crate::auto_restart::AutoRestartConfig;
 use crate::config::Keybinds;
 use crate::docker::client::DockerClient;
 use crate::service::Service;
-use crate::status::{Status, ToastState};
+use crate::status::ToastState;
 
 impl App {
     pub fn new(keybinds: Keybinds) -> Self {
-        let service_names = get_service_names();
+        let project_root = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        let service_names = get_service_names(&project_root);
+        let (auto_restart, auto_restart_error) = match AutoRestartConfig::load(&project_root) {
+            Ok(config) => (config, None),
+            Err(error) => (AutoRestartConfig::default(), Some(error.to_string())),
+        };
 
         let docker_running = DockerClient::docker_info_ok();
         let docker_command_available = DockerClient::docker_cli_ok();
         let docker_compose_available = DockerClient::compose_cli_ok();
 
-        let (toast, toast_timer) = if !docker_compose_available {
+        let (toast, toast_timer) = if let Some(error) = auto_restart_error {
+            (
+                Some(crate::toast::Toast {
+                    state: ToastState::Error,
+                    message: format!("Auto-restart config error: {error}"),
+                }),
+                5,
+            )
+        } else if !docker_compose_available {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Error,
@@ -42,7 +56,7 @@ impl App {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Info,
-                    message: "Welcome to Docker Manager".to_string(),
+                    message: "ARGV Docker Manager is ready".to_string(),
                 }),
                 3,
             )
@@ -50,18 +64,9 @@ impl App {
 
         let mut app = Self {
             state: ratatui::widgets::ListState::default(),
-            services: service_names
-                .into_iter()
-                .map(|name| Service {
-                    name,
-                    status: Arc::new(Mutex::new(Status::Stopped)),
-                    pull_progress: Arc::new(Mutex::new(None)),
-                    events: Arc::new(Mutex::new(String::new())),
-                    logs: Arc::new(Mutex::new(String::new())),
-                    live_logs: Arc::new(Mutex::new(String::new())),
-                    logs_child: Arc::new(Mutex::new(None)),
-                })
-                .collect(),
+            services: service_names.into_iter().map(Service::new).collect(),
+            project_root,
+            auto_restart,
             toast,
             toast_timer,
 
@@ -85,6 +90,7 @@ impl App {
             event_listener_running: false,
             event_listener_handle: None,
             toast_tick_accumulator: 0,
+            logs_render_cache: Default::default(),
             keybinds,
         };
         app.refresh_statuses();
@@ -94,8 +100,8 @@ impl App {
     }
 }
 
-fn get_service_names() -> Vec<String> {
-    match std::fs::read_dir("containers/") {
+fn get_service_names(project_root: &Path) -> Vec<String> {
+    match std::fs::read_dir(project_root.join("containers")) {
         Ok(entries) => {
             let mut names: Vec<String> = entries
                 .filter_map(|entry| entry.ok())

@@ -1,6 +1,37 @@
-# Changelog
+# ARGV Docker Manager Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [0.3.0] - 2026-07-15
+
+### 🚀 Features
+
+- *(containers)* Add mailpit
+- *(app)* Auto-restart selected services at boot
+- *(keybinds)* Make s toggle services
+
+### 🐛 Bug Fixes
+
+- Events
+- *(ui)* Compact runtime event details
+
+### 🚜 Refactor
+
+- *(app)* Improve service state and log buffering
+- *(app)* Core refactor
+- *(app)* Reduce render allocations
+- Ui
+
+### 📚 Documentation
+
+- Update README with current app features and add v0.2.0 changelog
+
+## [0.2.0] - 2026-02-24
+
+### 🐛 Bug Fixes
+
+- Stop docker events and child processes on app exit
+- I fixed ai code because it's the worse
 
 ## [0.1.1] - 2026-02-19
 

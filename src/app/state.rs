@@ -1,3 +1,8 @@
+use std::path::PathBuf;
+
+use ratatui::text::Text;
+
+use crate::auto_restart::AutoRestartConfig;
 use crate::config::Keybinds;
 use crate::docker::events::EventListenerHandle;
 use crate::service::Service;
@@ -26,9 +31,31 @@ pub enum DaemonAction {
     Restart,
 }
 
+pub struct LogsRenderCache {
+    pub service_index: Option<usize>,
+    pub tab: LogTab,
+    pub buffer_revision: u64,
+    pub body: Text<'static>,
+    pub body_line_count: u16,
+}
+
+impl Default for LogsRenderCache {
+    fn default() -> Self {
+        Self {
+            service_index: None,
+            tab: LogTab::Events,
+            buffer_revision: 0,
+            body: Text::from(""),
+            body_line_count: 0,
+        }
+    }
+}
+
 pub struct App {
     pub state: ratatui::widgets::ListState,
     pub services: Vec<Service>,
+    pub project_root: PathBuf,
+    pub auto_restart: AutoRestartConfig,
     pub toast: Option<Toast>,
     pub toast_timer: u32,
 
@@ -52,11 +79,16 @@ pub struct App {
     pub event_listener_running: bool,
     pub event_listener_handle: Option<EventListenerHandle>,
     pub toast_tick_accumulator: u8,
+    pub logs_render_cache: LogsRenderCache,
     pub keybinds: Keybinds,
 }
 
 impl App {
     pub fn next(&mut self) {
+        if self.services.is_empty() {
+            self.state.select(None);
+            return;
+        }
         let i = match self.state.selected() {
             Some(i) => {
                 if i >= self.services.len() - 1 {
@@ -72,6 +104,10 @@ impl App {
     }
 
     pub fn previous(&mut self) {
+        if self.services.is_empty() {
+            self.state.select(None);
+            return;
+        }
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {

@@ -52,11 +52,10 @@ impl DockerClient {
         {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
-                let lines: Vec<&str> = stdout.trim().lines().collect();
-                if lines.is_empty() {
+                if stdout.trim().is_empty() {
                     Status::Stopped
                 } else {
-                    let has_running = lines.iter().any(|line| {
+                    let has_running = stdout.lines().any(|line| {
                         line.split('\t')
                             .nth(1)
                             .map(|status| status.starts_with("Up"))
@@ -73,91 +72,89 @@ impl DockerClient {
         }
     }
 
-    pub fn get_batch_statuses(service_names: &[String]) -> HashMap<String, Status> {
-        let mut statuses = HashMap::new();
+    pub fn get_batch_statuses<'a>(
+        service_names: impl IntoIterator<Item = &'a str>,
+    ) -> HashMap<String, Status> {
+        let mut statuses: HashMap<String, Status> = service_names
+            .into_iter()
+            .map(|name| {
+                let status = if validate_service_name(name) {
+                    Status::Stopped
+                } else {
+                    Status::Error
+                };
+                (name.to_owned(), status)
+            })
+            .collect();
 
-        for name in service_names {
-            if !validate_service_name(name) {
-                statuses.insert(name.clone(), Status::Error);
-            } else {
-                statuses.insert(name.clone(), Status::Stopped);
-            }
-        }
-
-        if service_names.is_empty() {
+        if statuses.is_empty() {
             return statuses;
         }
 
         let cmd = Command::new("docker")
             .arg("ps")
+            .arg("-a")
             .arg("--format")
-            .arg("{{.Names}}\t{{.Status}}\t{{.Label \"com.docker.compose.project\"}}")
+            .arg("{{.Status}}\t{{.Label \"com.docker.compose.project\"}}")
             .output();
 
         match cmd {
             Ok(out) => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 for line in stdout.lines() {
-                    let parts: Vec<&str> = line.split('\t').collect();
-                    if parts.len() >= 3 {
-                        let status_str = parts[1];
-                        let project_name = parts[2];
-
-                        if service_names.contains(&project_name.to_string()) {
-                            let status = if status_str.starts_with("Up") {
-                                Status::Running
-                            } else {
-                                Status::Stopped
-                            };
-                            statuses.insert(project_name.to_string(), status);
-                        }
-                    }
+                    apply_batch_status_line(&mut statuses, line);
                 }
             }
             Err(_) => {
-                for name in service_names {
-                    statuses.insert(name.clone(), Status::Error);
+                for status in statuses.values_mut() {
+                    *status = Status::Error;
                 }
             }
         }
 
         statuses
     }
+}
 
-    pub fn all_containers_stopped(project: &str) -> bool {
-        match Command::new("docker")
-            .arg("ps")
-            .arg("-a")
-            .arg("--filter")
-            .arg(format!("label=com.docker.compose.project={}", project))
-            .arg("--format")
-            .arg("{{.Status}}")
-            .output()
-        {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let statuses: Vec<&str> = stdout
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .collect();
+fn apply_batch_status_line(statuses: &mut HashMap<String, Status>, line: &str) {
+    let mut parts = line.splitn(2, '\t');
+    let status_str = parts.next().unwrap_or_default();
+    let project_name = parts.next().unwrap_or_default();
 
-                if statuses.is_empty() {
-                    return true;
-                }
-
-                statuses.iter().all(|status| {
-                    status.starts_with("Exited")
-                        || status.starts_with("Created")
-                        || status.starts_with("Dead")
-                })
-            }
-            _ => false,
-        }
+    if status_str.starts_with("Up")
+        && let Some(status) = statuses.get_mut(project_name)
+        && *status != Status::Error
+    {
+        *status = Status::Running;
     }
 }
 
 fn validate_service_name(name: &str) -> bool {
     name.chars()
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn batch_status_parser_marks_project_running_when_any_container_is_up() {
+        let mut statuses = HashMap::from([
+            ("redis".to_string(), Status::Stopped),
+            ("mailpit".to_string(), Status::Stopped),
+        ]);
+        apply_batch_status_line(&mut statuses, "Exited (0)\tredis");
+        apply_batch_status_line(&mut statuses, "Up 3 seconds\tredis");
+
+        assert_eq!(statuses.get("redis"), Some(&Status::Running));
+    }
+
+    #[test]
+    fn batch_status_parser_ignores_unknown_projects() {
+        let mut statuses = HashMap::from([("redis".to_string(), Status::Stopped)]);
+        apply_batch_status_line(&mut statuses, "Up 3 seconds\tpostgres");
+
+        assert_eq!(statuses.get("redis"), Some(&Status::Stopped));
+    }
 }

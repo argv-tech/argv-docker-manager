@@ -29,14 +29,15 @@ impl App {
                             format!("containers/{}/docker-compose.yml", service_name);
                         let mut text = String::new();
                         if let Ok(content) = fs::read_to_string(&compose_path)
-                            && let Ok(compose) = serde_yaml::from_str::<Compose>(&content) {
-                                let services = compose.services.keys().cloned().collect::<Vec<_>>();
-                                let network = format!("{}_default", service_name);
-                                text = format!("Up output:\nNetwork {} Running\n", network);
-                                for svc in services {
-                                    text.push_str(&format!("Container {} Running\n", svc));
-                                }
+                            && let Ok(compose) = serde_yaml::from_str::<Compose>(&content)
+                        {
+                            let services = compose.services.keys().cloned().collect::<Vec<_>>();
+                            let network = format!("{}_default", service_name);
+                            text = format!("Up output:\nNetwork {} Running\n", network);
+                            for svc in services {
+                                text.push_str(&format!("Container {} Running\n", svc));
                             }
+                        }
                         let mut logs_lock = logs.lock().unwrap();
                         if logs_lock.is_empty() {
                             logs_lock.push_str(&text);
@@ -56,7 +57,7 @@ impl App {
         let selected_index = self.state.selected();
         let target_index = selected_index.filter(|&index| {
             self.log_tab == crate::app::LogTab::LiveLogs
-                && *self.services[index].status.lock().unwrap() == Status::Running
+                && self.services[index].status() == Status::Running
         });
 
         for index in 0..self.services.len() {
@@ -88,8 +89,7 @@ impl App {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
                     let mut logs = live_logs.lock().unwrap();
-                    logs.push_str(&line);
-                    logs.push('\n');
+                    logs.push_line(&line);
                 }
 
                 if let Some(mut child) = logs_child.lock().unwrap().take() {
@@ -105,7 +105,7 @@ impl App {
             let _ = child.kill();
             let _ = child.wait();
         }
-        if *service.status.lock().unwrap() != Status::Running {
+        if service.status() != Status::Running {
             service.live_logs.lock().unwrap().clear();
         }
     }

@@ -1,4 +1,4 @@
-# Agent Guidelines for docker-manager
+# Agent Guidelines for argv-docker-manager
 
 ## Build/Lint/Test Commands
 
@@ -26,9 +26,10 @@
 
 - App: q=quit, /=search, d=daemon, r=refresh, h=focus services, l=focus logs,
   j/k=scroll
-- Services: s=stop, S=start, space=toggle
+- Services: s=toggle start/stop, a=toggle auto-restart
 - Logs: space=toggle auto-scroll, t=switch tabs
-- Navigation: tab/shift-tab=next/prev service, up/down/pageup/pagedown=scroll
+- Navigation: h/l=focus services/logs, tab/shift-tab=next/prev service,
+  up/down/pageup/pagedown=scroll
 
 ## Rules
 

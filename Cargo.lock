@@ -33,6 +33,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
+name = "argv-docker-manager"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crossterm",
+ "futures",
+ "ratatui",
+ "serde",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+]
+
+[[package]]
 name = "atomic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -315,22 +331,6 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
-]
-
-[[package]]
-name = "docker-manager"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "chrono",
- "crossterm",
- "futures",
- "ratatui",
- "serde",
- "serde_yaml",
- "thiserror 2.0.18",
- "tokio",
- "toml",
 ]
 
 [[package]]

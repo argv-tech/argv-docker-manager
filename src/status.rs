@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Running,
     Stopped,

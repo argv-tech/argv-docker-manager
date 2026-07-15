@@ -46,6 +46,20 @@ pub fn is_auto_restart_unit_installed() -> bool {
     Path::new(SYSTEMD_UNIT_DIR).join(UNIT_NAME).is_file()
 }
 
+pub fn remove_auto_restart_unit() -> Result<()> {
+    let unit_path = Path::new(SYSTEMD_UNIT_DIR).join(UNIT_NAME);
+    if !unit_path.is_file() {
+        bail!("auto-restart unit is not installed");
+    }
+
+    run_privileged("systemctl", [OsStr::new("stop"), OsStr::new(UNIT_NAME)])?;
+    run_privileged("systemctl", [OsStr::new("disable"), OsStr::new(UNIT_NAME)])?;
+    run_privileged("rm", [unit_path.as_os_str()])?;
+    run_privileged("systemctl", [OsStr::new("daemon-reload")])?;
+
+    Ok(())
+}
+
 fn render_unit(executable: &Path, project_root: &Path, user: &str) -> Result<String> {
     let executable = escape_unit_value(executable)?;
     let project_root = escape_unit_value(project_root)?;

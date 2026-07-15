@@ -54,6 +54,11 @@ async fn main() -> Result<()> {
             println!("Installed and enabled {unit_name}");
             return Ok(());
         }
+        CommandMode::RemoveAutoRestart => {
+            systemd::remove_auto_restart_unit()?;
+            println!("Removed auto-restart unit");
+            return Ok(());
+        }
         CommandMode::Tui => {}
     }
 
@@ -79,6 +84,7 @@ enum CommandMode {
     Tui,
     AutoRestart(PathBuf),
     InstallAutoRestart(PathBuf),
+    RemoveAutoRestart,
 }
 
 fn command_mode() -> Result<CommandMode> {
@@ -108,6 +114,12 @@ fn command_mode() -> Result<CommandMode> {
                 bail!("--install-auto-restart accepts at most one project root path");
             }
             Ok(CommandMode::InstallAutoRestart(project_root))
+        }
+        Some("--remove-auto-restart") => {
+            if args.next().is_some() {
+                bail!("--remove-auto-restart takes no arguments");
+            }
+            Ok(CommandMode::RemoveAutoRestart)
         }
         Some(unknown) => bail!("unknown argument: {unknown}"),
         None => bail!("command argument is not valid UTF-8"),

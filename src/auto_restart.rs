@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -71,6 +73,10 @@ impl AutoRestartConfig {
         self.services.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.services.is_empty()
+    }
+
     pub fn services(&self) -> impl Iterator<Item = &str> {
         self.services.iter().map(String::as_str)
     }
@@ -81,10 +87,21 @@ pub fn start_configured_services(project_root: &Path) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("failed to resolve {}", project_root.display()))?;
     let config = AutoRestartConfig::load(&project_root)?;
+
+    if config.is_empty() {
+        eprintln!("no services configured for auto-restart");
+        return Ok(());
+    }
+
+    eprintln!("waiting for Docker daemon...");
+    wait_for_docker()?;
+
     let mut failures = Vec::new();
 
     for service_name in config.services() {
+        eprintln!("starting {service_name}...");
         if let Err(error) = start_service(&project_root, service_name) {
+            eprintln!("failed to start {service_name}: {error}");
             failures.push(error.to_string());
         }
     }
@@ -94,6 +111,36 @@ pub fn start_configured_services(project_root: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn wait_for_docker() -> Result<()> {
+    const MAX_ATTEMPTS: u32 = 30;
+    const RETRY_DELAY: Duration = Duration::from_secs(2);
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        let status = Command::new("docker")
+            .args(["info"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                eprintln!("Docker daemon is ready");
+                return Ok(());
+            }
+            _ => {
+                if attempt < MAX_ATTEMPTS {
+                    eprintln!(
+                        "Docker not ready, retrying in {RETRY_DELAY:?} ({attempt}/{MAX_ATTEMPTS})"
+                    );
+                    std::thread::sleep(RETRY_DELAY);
+                }
+            }
+        }
+    }
+
+    bail!("Docker daemon did not become ready after {MAX_ATTEMPTS} attempts");
 }
 
 pub fn config_path(project_root: &Path) -> PathBuf {

@@ -5,3 +5,4 @@ target/
 .docker-manager-autorestart.toml.tmp
 .argv-docker-manager-autorestart.toml
 .argv-docker-manager-autorestart.toml.tmp
+/.opencode/plans

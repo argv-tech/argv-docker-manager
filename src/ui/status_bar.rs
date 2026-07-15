@@ -60,7 +60,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
         ),
         Span::styled(
             format!("  {} AUTO-START", app.auto_restart.len()),
-            Style::new().fg(if app.auto_restart.len() == 0 {
+            Style::new().fg(if app.auto_restart.is_empty() {
                 theme::MUTED
             } else {
                 theme::ACCENT

@@ -51,9 +51,7 @@ The application displays the app name and version in the bottom right corner.
 
 **Services Pane:**
 - `j` / `k`: Scroll through services
-- `Space`: Toggle start/stop selected service
-- `S`: Start selected service
-- `s`: Stop selected service
+- `s`: Toggle start/stop selected service
 - `a`: Toggle auto-restart at boot for the selected service (`↻` marks enabled services)
 - `/`: Search services (type to filter, Esc to exit)
 

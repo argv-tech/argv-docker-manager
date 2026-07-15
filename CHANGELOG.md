@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### 🚀 Features
 
 - Add persistent per-project auto-restart selection and a dynamically generated systemd boot unit
+- Make `s` toggle the selected service while keeping log auto-scroll on `Space`
 
 ## [0.2.0] - 2026-02-24
 
@@ -116,4 +117,3 @@ All notable changes to this project will be documented in this file.
 - *(ai)* Update AGENTS
 - Name and version
 - Fix jobs
-

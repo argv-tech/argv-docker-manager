@@ -9,9 +9,7 @@ scroll_down = "j"
 scroll_up = "k"
 
 [services]
-stop = "s"
-start = "S"
-toggle = " "
+toggle = "s"
 auto_restart = "a"
 
 [logs]

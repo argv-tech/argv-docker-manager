@@ -49,21 +49,7 @@ fn controls_line(app: &App) -> Line<'static> {
     spans.push(sep());
     push_key(
         &mut spans,
-        "Stop",
-        service_keys.stop.clone(),
-        Color::LightRed,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Start",
-        service_keys.start.clone(),
-        Color::LightGreen,
-    );
-    spans.push(sep());
-    push_key(
-        &mut spans,
-        "Toggle",
+        "Start/Stop",
         service_keys.toggle.clone(),
         Color::Blue,
     );

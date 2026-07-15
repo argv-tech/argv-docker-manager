@@ -20,28 +20,6 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
         return true;
     }
 
-    if matches!(code, KeyCode::Char(c) if c == keys.stop) && !in_overlay_mode(app) {
-        if app.focus == Focus::Services {
-            if selected_service_transitioning(app) {
-                app.set_toast(ToastState::Info, "Service is busy, wait for transition", 2);
-            } else {
-                app.stop_service();
-            }
-        }
-        return true;
-    }
-
-    if matches!(code, KeyCode::Char(c) if c == keys.start) && !in_overlay_mode(app) {
-        if app.focus == Focus::Services {
-            if selected_service_transitioning(app) {
-                app.set_toast(ToastState::Info, "Service is busy, wait for transition", 2);
-            } else {
-                app.start_service();
-            }
-        }
-        return true;
-    }
-
     if matches!(code, KeyCode::Char(c) if c == keys.daemon) && !in_overlay_mode(app) {
         app.daemon_menu_mode = true;
         app.daemon_action_selected = crate::app::DaemonAction::Start;
@@ -115,16 +93,15 @@ fn handle_normal_mode(app: &mut App, code: KeyCode, keys: &Keys) {
                 app.previous();
             }
         }
-        KeyCode::Char(c) if c == keys.toggle => {
-            if app.focus == Focus::Services {
-                if selected_service_transitioning(app) {
-                    app.set_toast(ToastState::Info, "Service is busy, wait for transition", 2);
-                } else {
-                    app.toggle_service();
-                }
-            } else if app.focus == Focus::Logs {
-                app.log_auto_scroll = !app.log_auto_scroll;
+        KeyCode::Char(c) if c == keys.service_toggle && app.focus == Focus::Services => {
+            if selected_service_transitioning(app) {
+                app.set_toast(ToastState::Info, "Service is busy, wait for transition", 2);
+            } else {
+                app.toggle_service();
             }
+        }
+        KeyCode::Char(c) if c == keys.log_auto_scroll && app.focus == Focus::Logs => {
+            app.log_auto_scroll = !app.log_auto_scroll;
         }
         KeyCode::Char(c) if c == keys.auto_restart => {
             if app.focus == Focus::Services {

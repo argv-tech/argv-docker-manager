@@ -3,14 +3,13 @@ use crate::app::App;
 pub(super) struct Keys {
     pub quit: char,
     pub search: char,
-    pub stop: char,
-    pub start: char,
     pub daemon: char,
     pub scroll_down: char,
     pub scroll_up: char,
     pub switch_tab_left: char,
     pub switch_tab_right: char,
-    pub toggle: char,
+    pub service_toggle: char,
+    pub log_auto_scroll: char,
     pub auto_restart: char,
     pub refresh: char,
 }
@@ -20,8 +19,6 @@ impl Keys {
         Self {
             quit: app.keybinds.app.quit.chars().next().unwrap_or('q'),
             search: app.keybinds.app.search.chars().next().unwrap_or('/'),
-            stop: app.keybinds.services.stop.chars().next().unwrap_or('s'),
-            start: app.keybinds.services.start.chars().next().unwrap_or('S'),
             daemon: app.keybinds.app.daemon_menu.chars().next().unwrap_or('d'),
             scroll_down: app.keybinds.app.scroll_down.chars().next().unwrap_or('j'),
             scroll_up: app.keybinds.app.scroll_up.chars().next().unwrap_or('k'),
@@ -39,7 +36,14 @@ impl Keys {
                 .chars()
                 .next()
                 .unwrap_or(']'),
-            toggle: app.keybinds.services.toggle.chars().next().unwrap_or(' '),
+            service_toggle: app.keybinds.services.toggle.chars().next().unwrap_or('s'),
+            log_auto_scroll: app
+                .keybinds
+                .logs
+                .toggle_auto_scroll
+                .chars()
+                .next()
+                .unwrap_or(' '),
             auto_restart: app
                 .keybinds
                 .services

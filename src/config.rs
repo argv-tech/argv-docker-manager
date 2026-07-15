@@ -23,8 +23,6 @@ pub struct AppKeys {
 
 #[derive(Deserialize, Debug)]
 pub struct ServicesKeys {
-    pub stop: String,
-    pub start: String,
     pub toggle: String,
     #[serde(default = "default_auto_restart_key")]
     pub auto_restart: String,

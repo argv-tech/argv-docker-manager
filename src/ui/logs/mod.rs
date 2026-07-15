@@ -202,9 +202,7 @@ mod tests {
                     scroll_up: "k".to_string(),
                 },
                 services: ServicesKeys {
-                    stop: "s".to_string(),
-                    start: "S".to_string(),
-                    toggle: " ".to_string(),
+                    toggle: "s".to_string(),
                     auto_restart: "a".to_string(),
                 },
                 logs: LogsKeys {

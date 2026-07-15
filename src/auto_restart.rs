@@ -177,14 +177,12 @@ fn validate_service(project_root: &Path, service_name: &str) -> Result<()> {
 
 fn start_service(project_root: &Path, service_name: &str) -> Result<()> {
     validate_service(project_root, service_name)?;
-    let status = ComposeProject::at(project_root, service_name)
+    let child = ComposeProject::at(project_root, service_name)
         .up_detached_cmd()
-        .status()
+        .spawn()
         .with_context(|| format!("failed to start compose project {service_name}"))?;
 
-    if !status.success() {
-        bail!("compose project {service_name} exited with {status}");
-    }
+    eprintln!("spawned compose for {service_name} (pid {})", child.id());
 
     Ok(())
 }

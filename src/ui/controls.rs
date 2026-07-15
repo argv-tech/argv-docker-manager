@@ -70,6 +70,13 @@ fn controls_line(app: &App) -> Line<'static> {
     spans.push(sep());
     push_key(
         &mut spans,
+        "Boot",
+        service_keys.auto_restart.clone(),
+        Color::Cyan,
+    );
+    spans.push(sep());
+    push_key(
+        &mut spans,
         "Down",
         app_keys.scroll_down.clone(),
         Color::LightBlue,

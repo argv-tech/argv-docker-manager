@@ -165,6 +165,8 @@ mod tests {
         App {
             state: ratatui::widgets::ListState::default(),
             services: vec![Service::new("redis".to_string())],
+            project_root: std::env::temp_dir(),
+            auto_restart: Default::default(),
             toast: None,
             toast_timer: 0,
             search_mode: false,
@@ -203,6 +205,7 @@ mod tests {
                     stop: "s".to_string(),
                     start: "S".to_string(),
                     toggle: " ".to_string(),
+                    auto_restart: "a".to_string(),
                 },
                 logs: LogsKeys {
                     toggle_auto_scroll: " ".to_string(),

@@ -1,5 +1,6 @@
-use serde::Deserialize;
 use std::fs;
+
+use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]
 pub struct Keybinds {
@@ -25,11 +26,17 @@ pub struct ServicesKeys {
     pub stop: String,
     pub start: String,
     pub toggle: String,
+    #[serde(default = "default_auto_restart_key")]
+    pub auto_restart: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct LogsKeys {
     pub toggle_auto_scroll: String,
+}
+
+fn default_auto_restart_key() -> String {
+    "a".to_string()
 }
 
 impl Keybinds {

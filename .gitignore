@@ -1,3 +1,5 @@
 **/db
 target/
 /containers/mailpit/data
+.docker-manager-autorestart.toml
+.docker-manager-autorestart.toml.tmp

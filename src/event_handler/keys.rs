@@ -11,6 +11,7 @@ pub(super) struct Keys {
     pub switch_tab_left: char,
     pub switch_tab_right: char,
     pub toggle: char,
+    pub auto_restart: char,
     pub refresh: char,
 }
 
@@ -39,6 +40,13 @@ impl Keys {
                 .next()
                 .unwrap_or(']'),
             toggle: app.keybinds.services.toggle.chars().next().unwrap_or(' '),
+            auto_restart: app
+                .keybinds
+                .services
+                .auto_restart
+                .chars()
+                .next()
+                .unwrap_or('a'),
             refresh: app.keybinds.app.refresh.chars().next().unwrap_or('r'),
         }
     }

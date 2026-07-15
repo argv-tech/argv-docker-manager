@@ -23,6 +23,7 @@ The Docker Manager (v0.2.0) is a Rust-based terminal user interface (TUI) applic
 - Docker daemon control (start/stop/restart)
 - Toast notifications for actions
 - Configurable keybinds
+- Per-project auto-restart selection at boot
 
 ### Dependencies
 - Rust 2024 and Cargo
@@ -53,6 +54,7 @@ The application displays the app name and version in the bottom right corner.
 - `Space`: Toggle start/stop selected service
 - `S`: Start selected service
 - `s`: Stop selected service
+- `a`: Toggle auto-restart at boot for the selected service (`↻` marks enabled services)
 - `/`: Search services (type to filter, Esc to exit)
 
 **Logs Pane:**
@@ -69,6 +71,27 @@ The application displays the app name and version in the bottom right corner.
 Keybinds are configurable in `keybinds.toml`.
 
 Services are loaded from the `containers/` directory.
+
+### Auto-restart selected services after reboot
+
+Auto-restart is opt-in per Compose project. In the Services pane, select a project and press `a` to toggle it. The selected names are stored in the git-ignored `.docker-manager-autorestart.toml` file in this clone.
+
+After choosing services, install the boot unit once:
+
+```bash
+./target/release/docker-manager --install-auto-restart
+```
+
+The installer asks for sudo access, generates a systemd unit with absolute paths to the current release binary and repository clone, enables it for `multi-user.target`, and does not start any unselected projects. This makes the unit work when the repository is cloned at a different path on another machine: build there and run the installer from that clone.
+
+Re-run the installer after moving the clone or changing the binary location. Changing the selected services does not require reinstalling the unit.
+
+To inspect the generated unit after installation, use the unit name printed by the installer:
+
+```bash
+systemctl status docker-manager-autorestart.service
+journalctl -u docker-manager-autorestart.service
+```
 
 ## Available Containers
 

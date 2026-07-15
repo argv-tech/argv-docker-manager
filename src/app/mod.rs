@@ -1,3 +1,4 @@
+pub mod auto_restart;
 pub mod compose_images;
 pub mod daemon;
 pub mod events;

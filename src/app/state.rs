@@ -1,9 +1,13 @@
+use std::path::PathBuf;
+
+use ratatui::text::Text;
+
+use crate::auto_restart::AutoRestartConfig;
 use crate::config::Keybinds;
 use crate::docker::events::EventListenerHandle;
 use crate::service::Service;
 use crate::status::ToastState;
 use crate::toast::Toast;
-use ratatui::text::Text;
 
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum Focus {
@@ -50,6 +54,8 @@ impl Default for LogsRenderCache {
 pub struct App {
     pub state: ratatui::widgets::ListState,
     pub services: Vec<Service>,
+    pub project_root: PathBuf,
+    pub auto_restart: AutoRestartConfig,
     pub toast: Option<Toast>,
     pub toast_timer: u32,
 
@@ -79,6 +85,10 @@ pub struct App {
 
 impl App {
     pub fn next(&mut self) {
+        if self.services.is_empty() {
+            self.state.select(None);
+            return;
+        }
         let i = match self.state.selected() {
             Some(i) => {
                 if i >= self.services.len() - 1 {
@@ -94,6 +104,10 @@ impl App {
     }
 
     pub fn previous(&mut self) {
+        if self.services.is_empty() {
+            self.state.select(None);
+            return;
+        }
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {

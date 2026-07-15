@@ -1,16 +1,22 @@
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 
 use crate::docker::process::run_capture;
 
 #[derive(Clone)]
 pub struct ComposeProject {
-    pub dir: String,
+    pub dir: PathBuf,
 }
 
 impl ComposeProject {
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into();
-        let dir = format!("containers/{}", name);
+        let dir = PathBuf::from("containers").join(name);
+        Self { dir }
+    }
+
+    pub fn at(project_root: &Path, name: &str) -> Self {
+        let dir = project_root.join("containers").join(name);
         Self { dir }
     }
 

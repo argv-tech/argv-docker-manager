@@ -50,7 +50,15 @@ pub fn render(frame: &mut Frame, app: &mut App, list_area: Rect, search_area: Op
             let status = service.status();
             let style = status_style(&status);
             let indicator = status_indicator(&status, app.animation_tick);
-            let line = format!("{} {}  {}", indicator, service.name, status);
+            let auto_restart = if app.auto_restart.contains(&service.name) {
+                "↻"
+            } else {
+                " "
+            };
+            let line = format!(
+                "{} {} {}  {}",
+                indicator, auto_restart, service.name, status
+            );
             ListItem::new(line).style(style)
         })
         .collect();
@@ -60,7 +68,7 @@ pub fn render(frame: &mut Frame, app: &mut App, list_area: Rect, search_area: Op
         .iter()
         .filter(|service| service.status() == Status::Running)
         .count();
-    let title = services_title(app.focus, running_count, app.services.len());
+    let title = services_title(running_count, app.services.len(), app.auto_restart.len());
 
     let list = List::new(items)
         .block(
@@ -92,12 +100,20 @@ fn status_style(status: &Status) -> Style {
     }
 }
 
-fn services_title(_focus: Focus, running_count: usize, total_count: usize) -> Line<'static> {
+fn services_title(
+    running_count: usize,
+    total_count: usize,
+    auto_restart_count: usize,
+) -> Line<'static> {
     Line::from(vec![
         Span::styled(" Services ", Style::default().fg(Color::White)),
         Span::styled(
             format!("{}/{} running", running_count, total_count),
             Style::default().fg(Color::Green),
+        ),
+        Span::styled(
+            format!("  ↻ {} boot", auto_restart_count),
+            Style::default().fg(Color::Cyan),
         ),
     ])
 }

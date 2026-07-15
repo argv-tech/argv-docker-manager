@@ -1,15 +1,19 @@
 mod app;
+mod auto_restart;
 mod config;
 mod docker;
 mod event_handler;
 mod service;
 mod status;
+mod systemd;
 mod toast;
 mod ui;
 
 use std::io;
+use std::path::PathBuf;
 use std::time::Duration;
 
+use anyhow::{Context, Result, bail};
 use ratatui::crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -39,7 +43,20 @@ fn install_panic_hook() {
 }
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> Result<()> {
+    match command_mode()? {
+        CommandMode::AutoRestart(project_root) => {
+            auto_restart::start_configured_services(&project_root)?;
+            return Ok(());
+        }
+        CommandMode::InstallAutoRestart(project_root) => {
+            let unit_name = systemd::install_auto_restart_unit(&project_root)?;
+            println!("Installed and enabled {unit_name}");
+            return Ok(());
+        }
+        CommandMode::Tui => {}
+    }
+
     install_panic_hook();
 
     enable_raw_mode()?;
@@ -54,7 +71,47 @@ async fn main() -> io::Result<()> {
         },
     )?;
 
-    run(terminal).await
+    run(terminal).await?;
+    Ok(())
+}
+
+enum CommandMode {
+    Tui,
+    AutoRestart(PathBuf),
+    InstallAutoRestart(PathBuf),
+}
+
+fn command_mode() -> Result<CommandMode> {
+    let mut args = std::env::args_os().skip(1);
+    let Some(command) = args.next() else {
+        return Ok(CommandMode::Tui);
+    };
+
+    match command.to_str() {
+        Some("--auto-restart") => {
+            let project_root = args
+                .next()
+                .map(PathBuf::from)
+                .context("--auto-restart requires a project root path")?;
+            if args.next().is_some() {
+                bail!("--auto-restart accepts exactly one project root path");
+            }
+            Ok(CommandMode::AutoRestart(project_root))
+        }
+        Some("--install-auto-restart") => {
+            let project_root = args
+                .next()
+                .map(PathBuf::from)
+                .map(Ok)
+                .unwrap_or_else(std::env::current_dir)?;
+            if args.next().is_some() {
+                bail!("--install-auto-restart accepts at most one project root path");
+            }
+            Ok(CommandMode::InstallAutoRestart(project_root))
+        }
+        Some(unknown) => bail!("unknown argument: {unknown}"),
+        None => bail!("command argument is not valid UTF-8"),
+    }
 }
 
 async fn run(mut terminal: DefaultTerminal) -> io::Result<()> {

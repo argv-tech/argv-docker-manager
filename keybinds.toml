@@ -12,6 +12,7 @@ scroll_up = "k"
 stop = "s"
 start = "S"
 toggle = " "
+auto_restart = "a"
 
 [logs]
 toggle_auto_scroll = " "

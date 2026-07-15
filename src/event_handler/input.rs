@@ -126,6 +126,11 @@ fn handle_normal_mode(app: &mut App, code: KeyCode, keys: &Keys) {
                 app.log_auto_scroll = !app.log_auto_scroll;
             }
         }
+        KeyCode::Char(c) if c == keys.auto_restart => {
+            if app.focus == Focus::Services {
+                app.toggle_selected_auto_restart();
+            }
+        }
         KeyCode::Char(c) if c == keys.refresh => {
             app.refresh_statuses();
             app.set_toast(ToastState::Info, "Refreshed statuses", 3);

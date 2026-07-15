@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### 🚀 Features
+
+- Add persistent per-project auto-restart selection and a dynamically generated systemd boot unit
+
 ## [0.2.0] - 2026-02-24
 
 ### 🐛 Bug Fixes
@@ -110,5 +116,4 @@ All notable changes to this project will be documented in this file.
 - *(ai)* Update AGENTS
 - Name and version
 - Fix jobs
-
 

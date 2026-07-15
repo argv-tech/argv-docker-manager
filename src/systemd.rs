@@ -75,7 +75,7 @@ fn render_unit(executable: &Path, project_root: &Path, user: &str) -> Result<Str
          [Service]\n\
          Type=oneshot\n\
          User={user}\n\
-         WorkingDirectory=\"{project_root}\"\n\
+         WorkingDirectory={project_root}\n\
          ExecStart=\"{executable}\" --auto-restart \"{project_root}\"\n\
          RemainAfterExit=yes\n\
          \n\
@@ -194,7 +194,7 @@ mod tests {
              [Service]\n\
              Type=oneshot\n\
              User=alice\n\
-             WorkingDirectory=\"/srv/compose clone\"\n\
+             WorkingDirectory=/srv/compose clone\n\
              ExecStart=\"/opt/my tools/argv-docker-manager\" --auto-restart \"/srv/compose clone\"\n\
              RemainAfterExit=yes\n\
              \n\

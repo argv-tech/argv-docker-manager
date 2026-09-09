@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::thread;
 
 use crate::app::state::App;
@@ -13,6 +14,8 @@ struct Compose {
 }
 
 impl App {
+    const LIVE_LOG_RETRY_COOLDOWN_TICKS: u8 = 15;
+
     pub fn populate_initial_logs(&self) {
         if !self.podman_available {
             return;
@@ -62,8 +65,29 @@ impl App {
                 && self.services[index].status() == Status::Running
         });
 
-        if self.live_log_service_index == target_index {
+        let listener_tracked =
+            target_index.is_some() && self.live_log_service_index == target_index;
+        let listener_is_active = target_index.is_some_and(|index| {
+            self.live_log_service_index == Some(index)
+                && self.services[index].live_logs_process_active()
+        });
+        if listener_is_active {
+            self.live_log_retry_cooldown_ticks = 0;
             return;
+        }
+        if target_index.is_none() && self.live_log_service_index.is_none() {
+            self.live_log_retry_cooldown_ticks = 0;
+            return;
+        }
+        if listener_tracked && self.live_log_retry_cooldown_ticks > 0 {
+            self.live_log_retry_cooldown_ticks =
+                self.live_log_retry_cooldown_ticks.saturating_sub(1);
+            return;
+        }
+        if listener_tracked {
+            self.live_log_retry_cooldown_ticks = Self::LIVE_LOG_RETRY_COOLDOWN_TICKS;
+        } else {
+            self.live_log_retry_cooldown_ticks = 0;
         }
 
         if let Some(index) = self.live_log_service_index.take() {
@@ -71,47 +95,63 @@ impl App {
         }
 
         if let Some(index) = target_index {
-            self.ensure_live_logs_for_service(index);
-            self.live_log_service_index = Some(index);
+            if self.ensure_live_logs_for_service(index) {
+                self.live_log_service_index = Some(index);
+            } else {
+                self.live_log_service_index = Some(index);
+                self.live_log_retry_cooldown_ticks = Self::LIVE_LOG_RETRY_COOLDOWN_TICKS;
+            }
         }
     }
 
-    fn ensure_live_logs_for_service(&self, index: usize) {
+    fn ensure_live_logs_for_service(&self, index: usize) -> bool {
         let service = &self.services[index];
         if service.logs_child.lock().unwrap().is_some() {
-            return;
+            return true;
         }
 
+        service.reset_live_logs();
+        let generation = service.live_logs_generation.load(Ordering::Relaxed);
         let project = ComposeProject::new(service.name.clone());
         let live_logs = Arc::clone(&service.live_logs);
         let logs_child = Arc::clone(&service.logs_child);
+        let live_logs_generation = Arc::clone(&service.live_logs_generation);
 
-        if let Ok(mut child) = project.logs_follow()
-            && let Some(stdout) = child.stdout.take()
-        {
-            *logs_child.lock().unwrap() = Some(child);
-            thread::spawn(move || {
-                let reader = BufReader::new(stdout);
-                for line in reader.lines().map_while(Result::ok) {
-                    let mut logs = live_logs.lock().unwrap();
-                    logs.push_line(&line);
-                }
+        if let Ok(mut child) = project.logs_follow() {
+            if let Some(stdout) = child.stdout.take() {
+                *logs_child.lock().unwrap() = Some(child);
+                thread::spawn(move || {
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines().map_while(Result::ok) {
+                        let mut logs = live_logs.lock().unwrap();
+                        if live_logs_generation.load(Ordering::Relaxed) != generation {
+                            break;
+                        }
+                        logs.push_line(&line);
+                    }
 
-                if let Some(mut child) = logs_child.lock().unwrap().take() {
-                    let _ = child.wait();
-                }
-            });
+                    if live_logs_generation.load(Ordering::Relaxed) == generation
+                        && let Some(mut child) = logs_child.lock().unwrap().take()
+                    {
+                        let _ = child.wait();
+                    }
+                });
+                return true;
+            }
+
+            let _ = child.kill();
+            let _ = child.wait();
         }
+
+        false
     }
 
     fn stop_live_logs_for_service(&self, index: usize) {
         let service = &self.services[index];
+        service.reset_live_logs();
         if let Some(mut child) = service.logs_child.lock().unwrap().take() {
             let _ = child.kill();
             let _ = child.wait();
-        }
-        if service.status() != Status::Running {
-            service.live_logs.lock().unwrap().clear();
         }
     }
 

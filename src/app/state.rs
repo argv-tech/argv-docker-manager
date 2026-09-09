@@ -79,6 +79,7 @@ pub struct App {
     pub event_listener_handle: Option<EventListenerHandle>,
     pub toast_tick_accumulator: u8,
     pub live_log_service_index: Option<usize>,
+    pub live_log_retry_cooldown_ticks: u8,
     pub logs_render_cache: LogsRenderCache,
     pub keybinds: Keybinds,
 }

@@ -3,7 +3,8 @@ use std::path::Path;
 use crate::app::state::{App, DaemonAction, Focus, LogTab};
 use crate::auto_restart::AutoRestartConfig;
 use crate::config::Keybinds;
-use crate::docker::client::DockerClient;
+use crate::podman::client::PodmanClient;
+use crate::podman::compose::ComposeProject;
 use crate::service::Service;
 use crate::status::ToastState;
 
@@ -16,9 +17,9 @@ impl App {
             Err(error) => (AutoRestartConfig::default(), Some(error.to_string())),
         };
 
-        let docker_running = DockerClient::docker_info_ok();
-        let docker_command_available = DockerClient::docker_cli_ok();
-        let docker_compose_available = DockerClient::compose_cli_ok();
+        let podman_command_available = PodmanClient::podman_cli_ok();
+        let podman_compose_available = podman_command_available && PodmanClient::compose_cli_ok();
+        let podman_available = podman_command_available && PodmanClient::podman_info_ok();
 
         let (toast, toast_timer) = if let Some(error) = auto_restart_error {
             (
@@ -28,27 +29,27 @@ impl App {
                 }),
                 5,
             )
-        } else if !docker_compose_available {
+        } else if !podman_command_available {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Error,
-                    message: "Docker Compose not found. Services may not work.".to_string(),
+                    message: "Podman CLI not found.".to_string(),
                 }),
                 5,
             )
-        } else if !docker_command_available {
+        } else if !podman_compose_available {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Error,
-                    message: "Docker CLI not found.".to_string(),
+                    message: "Podman Compose not found. Services may not work.".to_string(),
                 }),
                 5,
             )
-        } else if !docker_running {
+        } else if !podman_available {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Warning,
-                    message: "Docker daemon not running.".to_string(),
+                    message: "Podman runtime unavailable.".to_string(),
                 }),
                 4,
             )
@@ -56,7 +57,7 @@ impl App {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Info,
-                    message: "ARGV Docker Manager is ready".to_string(),
+                    message: "ARGV Podman Manager is ready".to_string(),
                 }),
                 3,
             )
@@ -72,13 +73,12 @@ impl App {
 
             search_mode: false,
             search_query: String::new(),
-            docker_daemon_running: docker_running,
-            docker_command_available,
-            docker_compose_available,
+            podman_available,
+            podman_command_available,
+            podman_compose_available,
             daemon_menu_mode: false,
             daemon_action_selected: DaemonAction::Start,
             daemon_start_mode: false,
-            password_input: String::new(),
             focus: Focus::Services,
             first_status_check: true,
             log_scroll: 0,
@@ -107,9 +107,11 @@ fn get_service_names(project_root: &Path) -> Vec<String> {
                 .filter_map(|entry| entry.ok())
                 .filter(|entry| entry.path().is_dir())
                 .filter_map(|dir| {
-                    let compose_path = dir.path().join("docker-compose.yml");
-                    if compose_path.exists() {
-                        dir.file_name().to_str().map(|s| s.to_string())
+                    let file_name = dir.file_name();
+                    let name = file_name.to_str()?;
+                    let compose_path = ComposeProject::at(project_root, name).compose_file();
+                    if compose_path.is_file() {
+                        Some(name.to_string())
                     } else {
                         None
                     }

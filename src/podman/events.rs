@@ -1,12 +1,12 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::docker::inspect;
+use super::{COMPOSE_PROJECT_LABEL, LEGACY_COMPOSE_PROJECT_LABEL, PODMAN_COMMAND};
+use crate::podman::inspect;
 use crate::service::{LogBuffer, SharedLogBuffer};
 use crate::status::Status;
 
@@ -34,6 +34,7 @@ pub fn spawn_projects_listener(
     let shutdown_clone = Arc::clone(&shutdown);
 
     thread::spawn(move || {
+        let mut since = chrono::Utc::now();
         seed_initial_events(&project_targets);
 
         loop {
@@ -41,36 +42,33 @@ pub fn spawn_projects_listener(
                 break;
             }
 
-            let mut cmd = std::process::Command::new("docker");
+            let until = chrono::Utc::now();
+            let mut cmd = std::process::Command::new(PODMAN_COMMAND);
             cmd.arg("events")
+                .arg("--stream=false")
                 .arg("--filter")
                 .arg("type=container")
-                .arg("--filter")
-                .arg("label=com.docker.compose.project")
                 .arg("--format")
-                .arg("{{.Action}}\t{{index .Actor.Attributes \"com.docker.compose.project\"}}\t{{index .Actor.Attributes \"name\"}}\t{{index .Actor.Attributes \"exitCode\"}}")
+                .arg(format_event_template())
                 .arg("--since")
-                .arg("0")
+                .arg(since.to_rfc3339())
                 .arg("--until")
-                .arg("2");
+                .arg(until.to_rfc3339());
 
-            match cmd.stdout(Stdio::piped()).spawn() {
-                Ok(mut child) => {
-                    if let Some(stdout) = child.stdout.take() {
-                        let reader = BufReader::new(stdout);
-                        for line in reader.lines().map_while(Result::ok) {
-                            if shutdown_clone.load(Ordering::Relaxed) {
-                                let _ = child.kill();
-                                let _ = child.wait();
-                                break;
-                            }
-                            handle_event_line(&line, &project_targets);
+            match cmd.stderr(Stdio::null()).output() {
+                Ok(output) if output.status.success() => {
+                    for line in String::from_utf8_lossy(&output.stdout).lines() {
+                        if shutdown_clone.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        if let Some(event) = event_in_window(line, since, until) {
+                            handle_event_line(event, &project_targets);
                         }
                     }
-                    let _ = child.wait();
+                    since = until;
                 }
-                Err(_) => {
-                    // Docker events stream unavailable, retry shortly.
+                Ok(_) | Err(_) => {
+                    // Podman events stream unavailable, retry shortly.
                 }
             }
 
@@ -109,20 +107,23 @@ pub fn append_project_runtime_details(logs: &SharedLogBuffer, project: &str) {
 }
 
 fn handle_event_line(line: &str, project_targets: &HashMap<String, ProjectEventTargets>) {
-    let mut parts = line.splitn(4, '\t');
+    let mut parts = line.splitn(5, '\t');
     let action = parts.next().unwrap_or("").trim();
-    let project = normalize_template_value(parts.next().unwrap_or("").trim());
     let container_name = parts.next().unwrap_or("").trim();
     let exit_code = parts.next().unwrap_or("").trim();
+    let podman_project = normalize_template_value(parts.next().unwrap_or("").trim());
+    let legacy_project = normalize_template_value(parts.next().unwrap_or("").trim());
 
     if action.is_empty() {
         return;
     }
 
-    let project = if project.is_empty() {
-        resolve_project_from_container(container_name).unwrap_or_default()
+    let project = if !podman_project.is_empty() {
+        podman_project
+    } else if !legacy_project.is_empty() {
+        legacy_project
     } else {
-        project
+        resolve_project_from_container(container_name).unwrap_or_default()
     };
 
     if project.is_empty() {
@@ -138,20 +139,23 @@ fn handle_event_line(line: &str, project_targets: &HashMap<String, ProjectEventT
         let mut status = target.status.lock().unwrap();
         let currently_stopping = matches!(*status, Status::Stopping);
         let next_status = match action {
-            "create" | "restart" | "unpause" => Some(Status::Starting),
+            // Creation does not imply a successful start (e.g. port binding can fail).
+            "create" => None,
+            "restart" | "unpause" => Some(Status::Running),
             "start" => Some(Status::Running),
             "stop" | "destroy" | "pause" => Some(Status::Stopped),
-            "die" | "kill" => {
+            "die" | "died" | "exited" | "kill" => {
                 if currently_stopping || matches!(*status, Status::Stopped) || exit_code == "0" {
                     Some(Status::Stopped)
                 } else {
                     Some(Status::Error)
                 }
             }
+            "remove" => Some(Status::Stopped),
             _ if action.starts_with("health_status: ") => {
-                if action.ends_with("healthy") {
+                if action == "health_status: healthy" {
                     Some(Status::Running)
-                } else if action.ends_with("unhealthy") {
+                } else if action == "health_status: unhealthy" {
                     Some(Status::Error)
                 } else {
                     None
@@ -171,6 +175,23 @@ fn handle_event_line(line: &str, project_targets: &HashMap<String, ProjectEventT
             }
         }
     }
+}
+
+fn format_event_template() -> String {
+    format!(
+        "{{{{.TimeNano}}}}\t{{{{.Status}}}}{{{{if eq .Status \"health_status\"}}}}: {{{{.HealthStatus}}}}{{{{end}}}}\t{{{{.Name}}}}\t{{{{.ContainerExitCode}}}}\t{{{{index .Attributes \"{COMPOSE_PROJECT_LABEL}\"}}}}\t{{{{index .Attributes \"{LEGACY_COMPOSE_PROJECT_LABEL}\"}}}}"
+    )
+}
+
+fn event_in_window(
+    line: &str,
+    since: chrono::DateTime<chrono::Utc>,
+    until: chrono::DateTime<chrono::Utc>,
+) -> Option<&str> {
+    let (timestamp, event) = line.split_once('\t')?;
+    let timestamp = chrono::DateTime::from_timestamp_nanos(timestamp.parse().ok()?);
+    // Adjacent polls share a boundary, but each event belongs to exactly one window.
+    (timestamp > since && timestamp <= until).then_some(event)
 }
 
 fn normalize_template_value(value: &str) -> String {
@@ -224,6 +245,47 @@ mod tests {
     use super::*;
 
     #[test]
+    fn polling_windows_reject_history_and_do_not_repeat_boundary_events() {
+        let since = chrono::DateTime::from_timestamp_nanos(100);
+        let until = chrono::DateTime::from_timestamp_nanos(200);
+        assert_eq!(event_in_window("99\tcreate", since, until), None);
+        assert_eq!(event_in_window("100\tcreate", since, until), None);
+        assert_eq!(event_in_window("150\tstart", since, until), Some("start"));
+        assert_eq!(event_in_window("200\tstop", since, until), Some("stop"));
+        assert_eq!(event_in_window("201\tstop", since, until), None);
+    }
+
+    #[test]
+    fn create_event_preserves_a_failed_start() {
+        let status = Arc::new(Mutex::new(Status::Error));
+        let targets = HashMap::from([(
+            "mysql".to_string(),
+            ProjectEventTargets {
+                status: Arc::clone(&status),
+                events: Arc::new(Mutex::new(LogBuffer::events())),
+                pull_progress: Arc::new(Mutex::new(None)),
+            },
+        )]);
+        handle_event_line("create\tmysql\t0\tmysql\t", &targets);
+        assert_eq!(*status.lock().unwrap(), Status::Error);
+    }
+
+    #[test]
+    fn unhealthy_event_is_an_error_not_healthy() {
+        let status = Arc::new(Mutex::new(Status::Running));
+        let targets = HashMap::from([(
+            "mysql".to_string(),
+            ProjectEventTargets {
+                status: Arc::clone(&status),
+                events: Arc::new(Mutex::new(LogBuffer::events())),
+                pull_progress: Arc::new(Mutex::new(None)),
+            },
+        )]);
+        handle_event_line("health_status: unhealthy\tmysql\t0\tmysql\t", &targets);
+        assert_eq!(*status.lock().unwrap(), Status::Error);
+    }
+
+    #[test]
     fn append_project_event_uses_project_scope() {
         let logs = Arc::new(Mutex::new(LogBuffer::events()));
 
@@ -270,7 +332,7 @@ mod tests {
             },
         );
 
-        handle_event_line("stop\tmailpit\tmailpit-1\t0", &targets);
+        handle_event_line("stop\tmailpit-1\t0\tmailpit\t", &targets);
 
         assert!(matches!(*status.lock().unwrap(), Status::Stopped));
         assert!(pull_progress.lock().unwrap().is_none());

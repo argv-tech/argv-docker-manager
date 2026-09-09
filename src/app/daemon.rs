@@ -1,41 +1,23 @@
 use crate::app::state::{App, DaemonAction};
-use crate::docker::compose::ComposeProject;
-use crate::docker::daemon;
-use crate::docker::process::run_capture;
+use crate::podman::compose::ComposeProject;
+use crate::podman::daemon;
+use crate::podman::process::run_capture;
 use crate::status::{Status, ToastState};
 
 impl App {
-    fn require_daemon_password(&mut self, action: &str) -> bool {
-        if self.password_input.is_empty() {
-            self.set_toast(
-                ToastState::Warning,
-                format!("Enter sudo password to {} Docker daemon", action),
-                3,
-            );
-            return false;
-        }
-
-        true
-    }
-
     fn refresh_statuses_now(&mut self) {
         self.daemon_probe_cooldown_ticks = 0;
         self.refresh_statuses();
     }
 
     fn complete_daemon_action(&mut self) {
-        self.password_input.clear();
         self.daemon_start_mode = false;
     }
 
     pub fn start_daemon(&mut self) {
-        if !self.require_daemon_password("start") {
-            return;
-        }
-
-        match daemon::start(&self.password_input) {
+        match daemon::start() {
             Ok(()) => {
-                self.set_toast(ToastState::Success, "Docker daemon started", 3);
+                self.set_toast(ToastState::Success, "Podman API socket started", 3);
                 self.refresh_statuses_now();
             }
             Err(error_msg) => {
@@ -86,10 +68,6 @@ impl App {
     }
 
     pub fn restart_daemon(&mut self) {
-        if !self.require_daemon_password("restart") {
-            return;
-        }
-
         match self.stop_all_services() {
             Ok(count) if count > 0 => {
                 self.set_toast(
@@ -110,11 +88,11 @@ impl App {
             }
         }
 
-        match daemon::restart(&self.password_input) {
+        match daemon::restart() {
             Ok(()) => {
                 self.set_toast(
                     ToastState::Success,
-                    "Docker daemon restarted (services stopped first)",
+                    "Podman API socket restarted (services stopped first)",
                     4,
                 );
                 self.refresh_statuses_now();
@@ -128,10 +106,6 @@ impl App {
     }
 
     pub fn stop_daemon(&mut self) {
-        if !self.require_daemon_password("stop") {
-            return;
-        }
-
         match self.stop_all_services() {
             Ok(count) if count > 0 => {
                 self.set_toast(
@@ -152,11 +126,11 @@ impl App {
             }
         }
 
-        match daemon::stop(&self.password_input) {
+        match daemon::stop() {
             Ok(()) => {
                 self.set_toast(
                     ToastState::Success,
-                    "Docker daemon stopped (services stopped first)",
+                    "Podman API socket stopped (services stopped first)",
                     4,
                 );
                 self.refresh_statuses_now();

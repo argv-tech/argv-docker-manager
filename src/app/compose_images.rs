@@ -1,9 +1,10 @@
 use std::fs;
 
-use crate::docker::client::DockerClient;
+use crate::podman::client::PodmanClient;
+use crate::podman::compose::ComposeProject;
 
 pub fn all_images_cached(service_name: &str) -> bool {
-    let compose_path = format!("containers/{}/docker-compose.yml", service_name);
+    let compose_path = ComposeProject::new(service_name).compose_file();
     let Ok(content) = fs::read_to_string(compose_path) else {
         return false;
     };
@@ -21,7 +22,7 @@ pub fn all_images_cached(service_name: &str) -> bool {
         service_def
             .get("image")
             .and_then(|image| image.as_str())
-            .map(DockerClient::image_exists)
+            .map(PodmanClient::image_exists)
             .unwrap_or(true)
     })
 }

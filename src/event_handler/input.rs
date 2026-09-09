@@ -33,7 +33,6 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
                 app.daemon_start_mode = false;
                 app.daemon_menu_mode = false;
                 app.search_query.clear();
-                app.password_input.clear();
             }
         }
         KeyCode::Enter => {
@@ -44,7 +43,6 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
             } else if app.daemon_menu_mode {
                 app.daemon_menu_mode = false;
                 app.daemon_start_mode = true;
-                app.password_input.clear();
             } else if app.daemon_start_mode {
                 app.execute_daemon_action();
             }
@@ -63,13 +61,7 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
             KeyCode::Up => daemon_previous(app),
             _ => {}
         },
-        _ if app.daemon_start_mode => match code {
-            KeyCode::Char(c) => app.password_input.push(c),
-            KeyCode::Backspace => {
-                app.password_input.pop();
-            }
-            _ => {}
-        },
+        _ if app.daemon_start_mode => {}
         _ => handle_normal_mode(app, code, keys),
     }
 

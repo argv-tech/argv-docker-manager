@@ -87,7 +87,10 @@ impl LogBuffer {
             return;
         }
 
-        let target_start = self.text.len().saturating_sub(self.max_bytes / 2);
+        let mut target_start = self.text.len().saturating_sub(self.max_bytes / 2);
+        while !self.text.is_char_boundary(target_start) {
+            target_start += 1;
+        }
         let drain_end = self.text[target_start..]
             .find('\n')
             .map(|offset| target_start + offset + 1)
@@ -150,6 +153,14 @@ impl Service {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_buffer_truncates_multibyte_output_without_panicking() {
+        let mut buffer = LogBuffer::new(9);
+        buffer.push_str("😀😀😀😀");
+        assert!(buffer.as_str().len() <= 9);
+        assert!(buffer.as_str().ends_with('😀'));
+    }
 
     #[test]
     fn log_buffer_truncates_old_lines_when_limit_is_exceeded() {

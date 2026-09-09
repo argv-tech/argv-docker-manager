@@ -68,13 +68,19 @@ impl ComposeProject {
     }
 
     pub fn logs_follow(&self) -> std::io::Result<Child> {
+        self.logs_command().spawn()
+    }
+
+    fn logs_command(&self) -> Command {
         let mut cmd = self.command();
+        // podman-compose formats logs with Python print calls; piped stdout is otherwise buffered.
+        cmd.env("PYTHONUNBUFFERED", "1");
         cmd.arg("logs")
             .arg("-f")
             .arg("--tail=100")
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        cmd.spawn()
+        cmd
     }
 }
 
@@ -91,6 +97,20 @@ mod tests {
         assert_eq!(
             project.command().get_program(),
             OsStr::new("podman-compose")
+        );
+    }
+
+    #[test]
+    fn live_logs_disable_python_output_buffering() {
+        let project = ComposeProject::new("mysql");
+        let command = project.logs_command();
+
+        assert_eq!(
+            command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new("PYTHONUNBUFFERED"))
+                .and_then(|(_, value)| value),
+            Some(OsStr::new("1"))
         );
     }
 }

@@ -181,6 +181,7 @@ mod tests {
             event_listener_running: false,
             event_listener_handle: None,
             toast_tick_accumulator: 0,
+            live_log_service_index: None,
             logs_render_cache: Default::default(),
             keybinds: Keybinds {
                 app: AppKeys {

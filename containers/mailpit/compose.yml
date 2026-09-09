@@ -1,10 +1,10 @@
 ---
 services:
   mailpit:
-    image: axllent/mailpit
+    image: docker.io/axllent/mailpit:latest
     container_name: mailpit
     volumes:
-      - ./data:/data
+      - ./data:/data:Z
     ports:
       - 8025:8025
       - 1025:1025

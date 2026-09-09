@@ -1,17 +1,17 @@
 ---
 services:
   postgres:
-    image: postgres
+    image: docker.io/library/postgres:latest
     container_name: postgres
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: root
     volumes:
-      - ./db:/var/lib/postgresql
+      - ./db:/var/lib/postgresql:Z
     ports:
       - 5432:5432
   postgres_adminer:
-    image: adminer
+    image: docker.io/library/adminer:latest
     container_name: adminer
     links:
       - postgres

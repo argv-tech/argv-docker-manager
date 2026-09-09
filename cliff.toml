@@ -6,7 +6,7 @@
 # A Tera template to be rendered as the changelog's footer.
 # See https://keats.github.io/tera/docs/#introduction
 header = """
-# ARGV Docker Manager Changelog\n
+# ARGV Podman Manager Changelog\n
 All notable changes to this project will be documented in this file.\n
 """
 # A Tera template to be rendered for each release in the changelog.

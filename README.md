@@ -1,33 +1,33 @@
 > NOTICE: containers are not production
 
 # Table of Contents
-- [ARGV Docker Manager](#argv-docker-manager)
+- [ARGV Podman Manager](#argv-podman-manager)
 - [Available Containers](#available-containers)
 - [Contributing](#contributing)
 - [init.tmux - Automated Setup](#inittmux---automated-setup)
 - [run.sh Usage](#runsh-usage)
 
-# ARGV Docker Manager
+# ARGV Podman Manager
 
-This repository provides a collection of docker-compose.yml configurations for development purposes and a Rust-based terminal UI application for interactively managing Docker Compose services.
+This repository provides a collection of Compose configurations for development purposes and a Rust-based terminal UI application for interactively managing Podman Compose services.
 
-## ARGV Docker Manager
+## ARGV Podman Manager
 
-ARGV Docker Manager (`argv-docker-manager`) is a Rust terminal interface for managing the Docker Compose projects in this repository.
+ARGV Podman Manager (`argv-podman-manager`) is a Rust terminal interface for managing the Podman Compose projects in this repository.
 
 ### Features
-- Interactive selection and management of Docker Compose services
+- Interactive selection and management of Podman Compose services
 - Start, stop, and toggle service states
-- View live container logs and Docker events
+- View live container logs and Podman events
 - Search/filter services
-- Docker daemon control (start/stop/restart)
+- Podman API socket control (start/stop/restart)
 - Toast notifications for actions
 - Configurable keybinds
 - Per-project auto-restart selection at boot
 
 ### Dependencies
 - Rust 2024 and Cargo
-- Docker and Docker Compose
+- Podman and `podman-compose`
 - ratatui, tokio, crossterm
 
 ### Building and Running
@@ -38,13 +38,13 @@ ARGV Docker Manager (`argv-docker-manager`) is a Rust terminal interface for man
    ```
 3. Run the manager:
    ```bash
-   ./target/release/argv-docker-manager
+   ./target/release/argv-podman-manager
    ```
 
 **Alternative:** If Rust or Cargo is not available, use the `run.sh` script for interactive container management.
 
 ### Usage
-The top status rail shows the app version, Docker health, running-project count, and auto-start count.
+The top status rail shows the app version, Podman health, running-project count, and auto-start count.
 
 **Navigation:**
 - `Tab` / `Shift+Tab`: Select the next / previous service
@@ -64,7 +64,7 @@ The top status rail shows the app version, Docker health, running-project count,
 
 **General:**
 - `r`: Refresh services status
-- `d`: Open Docker daemon control menu
+- `d`: Open Podman API socket control menu
 - `q`: Quit
 
 Keybinds are configurable in `keybinds.toml`.
@@ -73,12 +73,12 @@ Services are loaded from the `containers/` directory.
 
 ### Auto-restart selected services after reboot
 
-Auto-restart is opt-in per Compose project. In the Services pane, select a project and press `a` to toggle it. The selected names are stored in the git-ignored `.argv-docker-manager-autorestart.toml` file in this clone. Existing `.docker-manager-autorestart.toml` selections are still read for migration.
+Auto-restart is opt-in per Compose project. In the Services pane, select a project and press `a` to toggle it. The selected names are stored in the git-ignored `.argv-podman-manager-autorestart.toml` file in this clone. Existing Docker Manager auto-restart files are still read for migration.
 
 After choosing services, install the boot unit once:
 
 ```bash
-./target/release/argv-docker-manager --install-auto-restart
+./target/release/argv-podman-manager --install-auto-restart
 ```
 
 The installer asks for sudo access, generates a systemd unit with absolute paths to the current release binary and repository clone, enables it for `multi-user.target`, and does not start any unselected projects. This makes the unit work when the repository is cloned at a different path on another machine: build there and run the installer from that clone.
@@ -88,13 +88,13 @@ Re-run the installer after moving the clone or changing the binary location. Cha
 To inspect the generated unit after installation, use the unit name printed by the installer:
 
 ```bash
-systemctl status argv-docker-manager-autorestart.service
-journalctl -u argv-docker-manager-autorestart.service
+systemctl status argv-podman-manager-autorestart.service
+journalctl -u argv-podman-manager-autorestart.service
 ```
 
 ## Available Containers
 
-Each directory contains a `docker-compose.yml` for its service:
+Each directory contains a `compose.yml` for its service:
 
 - **mysql** - MySQL database with integrated phpMyAdmin
 - **postgres** - PostgreSQL database with integrated Adminer
@@ -110,7 +110,7 @@ To add a new container configuration:
 
 1. Create a new directory under `containers/` (e.g., `containers/myapp/`)
 
-2. Add a `docker-compose.yml` file with your service configuration. Follow these guidelines:
+2. Add a `compose.yml` file with your service configuration. Follow these guidelines:
    - Use relative paths for volumes if needed
    - Expose ports appropriately for development
    - Include health checks where possible
@@ -119,8 +119,8 @@ To add a new container configuration:
 3. Test your configuration:
    ```bash
    cd containers/myapp
-   docker compose up
-   docker compose down
+   podman-compose up
+   podman-compose down
    ```
 
 4. Update this README:
@@ -133,7 +133,7 @@ To add a new container configuration:
 - Ensure containers are suitable for development environments
 - Include necessary environment variables or configuration files
 - Document any special setup requirements
-- Follow Docker Compose best practices
+- Follow Compose and Podman best practices
 
 ## init.tmux - Automated Setup
 
@@ -141,7 +141,7 @@ The `init.tmux` file provides automated tmux session setup:
 
 **What it does:**
 - Automatically runs `run.sh` in tmux window 1
-- Sets a session-closed hook that kills all running Docker containers when you exit tmux
+- Sets a session-closed hook that kills all running Podman containers when you exit tmux
 
 **Usage:**
 
@@ -155,7 +155,7 @@ Or source it in an existing tmux session:
 tmux source-file ./init.tmux
 ```
 
-**Note:** The cleanup hook will stop all Docker containers (not just this project's) when the tmux session closes. If you have other containers running, use the manual method instead.
+**Note:** The cleanup hook will stop all Podman containers (not just this project's) when the tmux session closes. If you have other containers running, use the manual method instead.
 
 ## run.sh Usage
 
@@ -163,16 +163,14 @@ The `run.sh` script provides an interactive way to start multiple containers.
 
 ### What it does
 1. Runs `git pull` to update the repository
-2. Ensures Docker service is running (via systemd)
-3. Uses `fd` and `fzf` to let you select containers interactively
-4. Starts each selected container in a new tmux window (or directly if not in tmux)
+2. Starts the Podman Manager
 
 ### Dependencies
-- **docker** and **docker-compose**
+- **podman** and **podman-compose**
 - **fd** - fast file finder
 - **fzf** - fuzzy finder for interactive selection
 - **tmux** - terminal multiplexer (required for multi-window experience)
-- **systemd** - for Docker service management (requires sudo)
+- **systemd** - optional, for managing the Podman API socket and auto-restart unit
 
 ### How to use
 1. Make the script executable:
@@ -199,4 +197,4 @@ The `run.sh` script provides an interactive way to start multiple containers.
 
 ### Stopping containers
 - In tmux: Press `Ctrl+C` in the window running the container
-- From another terminal: `docker compose -f <dir>/docker-compose.yml down`
+- From another terminal: `podman-compose -f <dir>/compose.yml down`

@@ -33,7 +33,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
-name = "argv-docker-manager"
+name = "argv-podman-manager"
 version = "0.3.0-1"
 dependencies = [
  "anyhow",

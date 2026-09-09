@@ -1,16 +1,16 @@
 ---
 services:
   mysql:
-    image: mysql
+    image: docker.io/library/mysql:latest
     container_name: mysql
     environment:
       MYSQL_ROOT_PASSWORD: root
     ports:
       - "3306:3306"
     volumes:
-      - ./db:/var/lib/mysql
+      - ./db:/var/lib/mysql:Z
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin
+    image: docker.io/phpmyadmin/phpmyadmin:latest
     container_name: phpmyadmin_mysql
     links:
       - mysql

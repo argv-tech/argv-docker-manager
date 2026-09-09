@@ -48,8 +48,11 @@ impl App {
     }
 
     pub fn sync_live_log_listener(&mut self) {
+        // Only the selected live-log project needs a follower; avoid scanning every service per frame.
         if !self.podman_available {
-            self.stop_live_logs_for_all_services();
+            if let Some(index) = self.live_log_service_index.take() {
+                self.stop_live_logs_for_service(index);
+            }
             return;
         }
 
@@ -59,14 +62,17 @@ impl App {
                 && self.services[index].status() == Status::Running
         });
 
-        for index in 0..self.services.len() {
-            if Some(index) != target_index {
-                self.stop_live_logs_for_service(index);
-            }
+        if self.live_log_service_index == target_index {
+            return;
+        }
+
+        if let Some(index) = self.live_log_service_index.take() {
+            self.stop_live_logs_for_service(index);
         }
 
         if let Some(index) = target_index {
             self.ensure_live_logs_for_service(index);
+            self.live_log_service_index = Some(index);
         }
     }
 

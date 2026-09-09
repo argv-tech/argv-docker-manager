@@ -278,7 +278,7 @@ impl App {
             service.clear_pull_progress();
             append_project_event(&service.events, &service_name, "stop requested");
 
-            service.live_logs.lock().unwrap().clear();
+            service.reset_live_logs();
             if let Some(mut child) = service.logs_child.lock().unwrap().take() {
                 let _ = child.kill();
             }

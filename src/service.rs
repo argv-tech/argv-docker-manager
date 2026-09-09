@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use crate::status::Status;
@@ -111,6 +112,7 @@ pub struct Service {
     pub logs: SharedLogBuffer,
     pub live_logs: SharedLogBuffer,
     pub logs_child: Arc<Mutex<Option<std::process::Child>>>,
+    pub live_logs_generation: Arc<AtomicU64>,
 }
 
 impl Service {
@@ -123,6 +125,7 @@ impl Service {
             logs: Arc::new(Mutex::new(LogBuffer::command())),
             live_logs: Arc::new(Mutex::new(LogBuffer::live())),
             logs_child: Arc::new(Mutex::new(None)),
+            live_logs_generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -148,10 +151,27 @@ impl Service {
             Status::Pulling | Status::Starting | Status::Stopping
         )
     }
+
+    pub fn reset_live_logs(&self) {
+        self.live_logs_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.live_logs.lock().unwrap().clear();
+    }
+
+    pub fn live_logs_process_active(&self) -> bool {
+        let mut child = self.logs_child.lock().unwrap();
+        let Some(child) = child.as_mut() else {
+            return false;
+        };
+
+        matches!(child.try_wait(), Ok(None))
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::process::Command;
+
     use super::*;
 
     #[test]
@@ -206,5 +226,15 @@ mod tests {
         let snapshot = buffer.snapshot_if_changed(Some(buffer.revision()));
 
         assert!(snapshot.is_none());
+    }
+
+    #[test]
+    fn live_log_process_is_not_active_after_exit() {
+        let service = Service::new("mysql".to_string());
+        let mut child = Command::new("sh").args(["-c", "exit 0"]).spawn().unwrap();
+        let _ = child.wait();
+        *service.logs_child.lock().unwrap() = Some(child);
+
+        assert!(!service.live_logs_process_active());
     }
 }

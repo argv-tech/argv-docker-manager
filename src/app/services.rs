@@ -280,7 +280,7 @@ impl App {
 
             service.reset_live_logs();
             if let Some(mut child) = service.logs_child.lock().unwrap().take() {
-                let _ = child.kill();
+                ComposeProject::stop_logs_child(&mut child);
             }
 
             let service_name_for_toast = service_name.clone();

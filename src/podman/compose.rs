@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use super::PODMAN_COMPOSE_COMMAND;
 use crate::podman::process::run_capture;
 
@@ -71,10 +74,33 @@ impl ComposeProject {
         self.logs_command().spawn()
     }
 
+    pub fn stop_logs_child(child: &mut Child) {
+        #[cfg(unix)]
+        {
+            let process_group = format!("-{}", child.id());
+            let group_killed = Command::new("kill")
+                .args(["-KILL", "--"])
+                .arg(process_group)
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false);
+            if !group_killed {
+                let _ = child.kill();
+            }
+        }
+
+        #[cfg(not(unix))]
+        let _ = child.kill();
+
+        let _ = child.wait();
+    }
+
     fn logs_command(&self) -> Command {
         let mut cmd = self.command();
         // podman-compose formats logs with Python print calls; piped stdout is otherwise buffered.
         cmd.env("PYTHONUNBUFFERED", "1");
+        #[cfg(unix)]
+        cmd.process_group(0);
         cmd.arg("logs")
             .arg("-f")
             .arg("--tail=100")

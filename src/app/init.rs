@@ -90,7 +90,6 @@ impl App {
             event_listener_running: false,
             event_listener_handle: None,
             toast_tick_accumulator: 0,
-            live_log_service_index: None,
             live_log_retry_cooldown_ticks: 0,
             logs_render_cache: Default::default(),
             keybinds,

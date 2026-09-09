@@ -4,7 +4,6 @@ use std::time::Duration;
 use ratatui::crossterm::event::{self, KeyEventKind};
 
 use crate::app::App;
-use crate::status::Status;
 
 mod input;
 mod keys;
@@ -29,16 +28,15 @@ pub async fn handle_events(app: &mut App, poll_timeout: Duration) -> io::Result<
         {
             return Ok(false);
         }
-    } else {
-        refresh_if_transitioning(app);
     }
+    refresh_periodically(app);
 
     update_toast_timer(app);
     app.sync_live_log_listener();
     Ok(true)
 }
 
-pub(crate) fn refresh_if_transitioning(app: &mut App) {
+fn refresh_periodically(app: &mut App) {
     const STATUS_REFRESH_COOLDOWN_TICKS: u8 = 24;
 
     if app.status_refresh_cooldown_ticks > 0 {
@@ -46,17 +44,8 @@ pub(crate) fn refresh_if_transitioning(app: &mut App) {
         return;
     }
 
-    let needs_refresh = app.services.iter().any(|service| {
-        matches!(
-            service.status(),
-            Status::Pulling | Status::Starting | Status::Stopping
-        )
-    });
-
-    if needs_refresh {
-        app.refresh_statuses();
-        app.status_refresh_cooldown_ticks = STATUS_REFRESH_COOLDOWN_TICKS;
-    }
+    app.refresh_statuses();
+    app.status_refresh_cooldown_ticks = STATUS_REFRESH_COOLDOWN_TICKS;
 }
 
 fn update_toast_timer(app: &mut App) {

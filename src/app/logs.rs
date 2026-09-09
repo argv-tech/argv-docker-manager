@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::app::state::App;
-use crate::docker::compose::ComposeProject;
+use crate::podman::compose::ComposeProject;
 use crate::status::Status;
 
 #[derive(serde::Deserialize)]
@@ -14,7 +14,7 @@ struct Compose {
 
 impl App {
     pub fn populate_initial_logs(&self) {
-        if !self.docker_daemon_running {
+        if !self.podman_available {
             return;
         }
         for service in &self.services {
@@ -25,8 +25,7 @@ impl App {
                 if let Ok(output) = project.ps_output() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     if stdout.contains("Up") {
-                        let compose_path =
-                            format!("containers/{}/docker-compose.yml", service_name);
+                        let compose_path = project.compose_file();
                         let mut text = String::new();
                         if let Ok(content) = fs::read_to_string(&compose_path)
                             && let Ok(compose) = serde_yaml::from_str::<Compose>(&content)
@@ -49,7 +48,7 @@ impl App {
     }
 
     pub fn sync_live_log_listener(&mut self) {
-        if !self.docker_daemon_running {
+        if !self.podman_available {
             self.stop_live_logs_for_all_services();
             return;
         }

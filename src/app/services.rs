@@ -4,41 +4,35 @@ use std::thread;
 use crate::app::compose_images;
 use crate::app::pull_progress;
 use crate::app::state::App;
-use crate::docker::client::DockerClient;
-use crate::docker::compose::ComposeProject;
-use crate::docker::daemon;
-use crate::docker::events::{append_project_event, append_project_runtime_details};
-use crate::docker::process::{run_stream, run_stream_with_line_callback};
+use crate::podman::client::PodmanClient;
+use crate::podman::compose::ComposeProject;
+use crate::podman::events::{append_project_event, append_project_runtime_details};
+use crate::podman::process::run_stream_with_line_callback;
 use crate::status::{Status, ToastState};
 
 impl App {
     pub fn refresh_statuses(&mut self) {
         const DAEMON_PROBE_COOLDOWN_TICKS: u8 = 60;
 
-        let should_probe_daemon = self.first_status_check
+        let should_probe_runtime = self.first_status_check
             || self.daemon_probe_cooldown_ticks == 0
-            || !self.docker_daemon_running;
-        let daemon_running = if should_probe_daemon {
+            || !self.podman_available;
+        let runtime_available = if should_probe_runtime {
             self.daemon_probe_cooldown_ticks = DAEMON_PROBE_COOLDOWN_TICKS;
-            daemon::docker_service_active() && DockerClient::docker_info_ok()
+            PodmanClient::podman_info_ok()
         } else {
-            self.docker_daemon_running
+            self.podman_available
         };
-        let daemon_changed = daemon_running != self.docker_daemon_running;
-        self.docker_daemon_running = daemon_running;
-        let has_transitioning_services = self
-            .services
-            .iter()
-            .any(|service| service.is_transitioning());
+        self.podman_available = runtime_available;
 
-        if !self.docker_daemon_running {
+        if !self.podman_available {
             self.stop_event_listeners();
             for service in &self.services {
-                service.set_status(Status::DaemonNotRunning);
+                service.set_status(Status::RuntimeUnavailable);
                 service.clear_pull_progress();
             }
-        } else if self.first_status_check || daemon_changed || has_transitioning_services {
-            let batch_statuses = DockerClient::get_batch_statuses(
+        } else {
+            let batch_statuses = PodmanClient::get_batch_statuses(
                 self.services.iter().map(|service| service.name.as_str()),
             );
 
@@ -65,7 +59,9 @@ impl App {
                             }
                         }
                         _ => {
-                            *status_lock = actual_status;
+                            if *status_lock != Status::Error || actual_status != Status::Stopped {
+                                *status_lock = actual_status;
+                            }
                         }
                     }
                 }
@@ -73,32 +69,24 @@ impl App {
             self.first_status_check = false;
         }
 
-        if self.docker_daemon_running && !self.event_listener_running {
+        if self.podman_available && !self.event_listener_running {
             self.start_event_listeners();
         }
     }
 
     pub fn start_service(&mut self) {
         if let Some(i) = self.state.selected() {
-            if !daemon::docker_service_active() {
+            if !self.podman_available {
                 self.set_toast(
                     ToastState::Error,
-                    "Cannot start service: Docker service not running",
-                    5,
-                );
-                return;
-            }
-            if !self.docker_daemon_running {
-                self.set_toast(
-                    ToastState::Error,
-                    "Cannot start service: Docker daemon not responding",
+                    "Cannot start service: Podman runtime unavailable",
                     5,
                 );
                 return;
             }
 
             let service_name = self.services[i].name.clone();
-            let current_status = DockerClient::get_status(&service_name);
+            let current_status = PodmanClient::get_status(&service_name);
             if current_status == Status::Running {
                 self.set_toast(
                     ToastState::Warning,
@@ -151,7 +139,10 @@ impl App {
                 } else {
                     let progress_callback = {
                         let pull_progress = Arc::clone(&pull_progress);
+                        let events = Arc::clone(&events);
+                        let service_name = service_name.clone();
                         Arc::new(move |line: &str| {
+                            append_project_event(&events, &service_name, line);
                             if let Some(progress) = pull_progress::extract(line) {
                                 *pull_progress.lock().unwrap() = Some(progress);
                             }
@@ -198,13 +189,18 @@ impl App {
                 append_project_event(&events, &service_name, "pull complete");
                 append_project_event(&events, &service_name, "up requested");
 
-                match run_stream(
+                let output_events = Arc::clone(&events);
+                let output_project = service_name.clone();
+                match run_stream_with_line_callback(
                     project.up_detached_cmd(),
                     Arc::clone(&logs),
                     Some("Up output:\n"),
+                    Some(Arc::new(move |line| {
+                        append_project_event(&output_events, &output_project, line);
+                    })),
                 ) {
                     Ok(true) => {
-                        let actual_status = DockerClient::get_status(&service_name_for_status);
+                        let actual_status = PodmanClient::get_status(&service_name_for_status);
                         if actual_status == Status::Running {
                             *status.lock().unwrap() = Status::Running;
                             append_project_event(&events, &service_name, "running confirmed");
@@ -247,25 +243,17 @@ impl App {
 
     pub fn stop_service(&mut self) {
         if let Some(i) = self.state.selected() {
-            if !daemon::docker_service_active() {
+            if !self.podman_available {
                 self.set_toast(
                     ToastState::Error,
-                    "Cannot stop service: Docker service not running",
-                    5,
-                );
-                return;
-            }
-            if !self.docker_daemon_running {
-                self.set_toast(
-                    ToastState::Error,
-                    "Cannot stop service: Docker daemon not responding",
+                    "Cannot stop service: Podman runtime unavailable",
                     5,
                 );
                 return;
             }
 
             let service_name = self.services[i].name.clone();
-            let current_status = DockerClient::get_status(&service_name);
+            let current_status = PodmanClient::get_status(&service_name);
             if current_status != Status::Running {
                 self.set_toast(
                     ToastState::Warning,
@@ -302,10 +290,15 @@ impl App {
             let project = ComposeProject::new(service_name.clone());
 
             thread::spawn(move || {
-                match run_stream(
+                let output_events = Arc::clone(&events);
+                let output_project = service_name.clone();
+                match run_stream_with_line_callback(
                     project.down_cmd(),
                     Arc::clone(&logs),
                     Some("Down output:\n"),
+                    Some(Arc::new(move |line| {
+                        append_project_event(&output_events, &output_project, line);
+                    })),
                 ) {
                     Ok(true) => {
                         *status.lock().unwrap() = Status::Stopped;

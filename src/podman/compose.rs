@@ -1,7 +1,16 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 
-use crate::docker::process::run_capture;
+use super::PODMAN_COMPOSE_COMMAND;
+use crate::podman::process::run_capture;
+
+pub const COMPOSE_FILE_NAME: &str = "compose.yml";
+const COMPOSE_FILE_NAMES: [&str; 4] = [
+    "compose.yml",
+    "compose.yaml",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+];
 
 #[derive(Clone)]
 pub struct ComposeProject {
@@ -20,9 +29,17 @@ impl ComposeProject {
         Self { dir }
     }
 
+    pub fn compose_file(&self) -> PathBuf {
+        COMPOSE_FILE_NAMES
+            .iter()
+            .map(|name| self.dir.join(name))
+            .find(|path| path.is_file())
+            .unwrap_or_else(|| self.dir.join(COMPOSE_FILE_NAME))
+    }
+
     pub fn command(&self) -> Command {
-        let mut cmd = Command::new("docker");
-        cmd.arg("compose").current_dir(&self.dir);
+        let mut cmd = Command::new(PODMAN_COMPOSE_COMMAND);
+        cmd.current_dir(&self.dir);
         cmd
     }
 
@@ -58,5 +75,22 @@ impl ComposeProject {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         cmd.spawn()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+
+    use super::*;
+
+    #[test]
+    fn command_uses_the_direct_podman_compose_provider() {
+        let project = ComposeProject::new("mysql");
+
+        assert_eq!(
+            project.command().get_program(),
+            OsStr::new("podman-compose")
+        );
     }
 }

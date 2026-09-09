@@ -8,7 +8,7 @@ pub enum Status {
     Stopping,
     Pulling,
     Error,
-    DaemonNotRunning,
+    RuntimeUnavailable,
 }
 
 impl fmt::Display for Status {
@@ -20,7 +20,7 @@ impl fmt::Display for Status {
             Status::Stopping => write!(f, "stopping"),
             Status::Pulling => write!(f, "pulling images"),
             Status::Error => write!(f, "error"),
-            Status::DaemonNotRunning => write!(f, "daemon not running"),
+            Status::RuntimeUnavailable => write!(f, "Podman runtime unavailable"),
         }
     }
 }

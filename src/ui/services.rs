@@ -198,7 +198,7 @@ fn status_label(status: &Status) -> &'static str {
         Status::Stopping => "STOPPING",
         Status::Pulling => "PULLING",
         Status::Error => "ERROR",
-        Status::DaemonNotRunning => "NO DAEMON",
+        Status::RuntimeUnavailable => "NO PODMAN",
     }
 }
 
@@ -214,7 +214,7 @@ fn status_indicator(status: &Status, tick: u64) -> &'static str {
             const FRAMES: [&str; 4] = ["◟", "◡", "◞", "◜"];
             FRAMES[((tick / 2) % FRAMES.len() as u64) as usize]
         }
-        Status::Stopped | Status::DaemonNotRunning => "○",
+        Status::Stopped | Status::RuntimeUnavailable => "○",
         Status::Error => "×",
     }
 }

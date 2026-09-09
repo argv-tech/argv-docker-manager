@@ -7,6 +7,7 @@ use ratatui::{
 };
 
 use crate::app::{App, DaemonAction};
+use crate::podman::daemon;
 
 use super::theme;
 
@@ -16,7 +17,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 
     if app.daemon_start_mode {
-        render_password_prompt(frame, app);
+        render_service_confirmation(frame, app);
     }
 
     if let Some(toast) = &app.toast {
@@ -45,7 +46,7 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
 
     let popup = theme::panel(
         Line::from(Span::styled(
-            " DAEMON CONTROL ",
+            " PODMAN SERVICE CONTROL ",
             Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
         )),
         true,
@@ -63,7 +64,7 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
 
     let (status_label, status_color) = daemon_status_style(app);
     let status_line = Line::from(vec![
-        Span::styled("Docker status: ", Style::new().fg(Color::Gray)),
+        Span::styled("Podman service: ", Style::new().fg(Color::Gray)),
         Span::styled(
             status_label,
             Style::new().fg(status_color).add_modifier(Modifier::BOLD),
@@ -81,7 +82,7 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
         .iter()
         .map(|action| {
             let unavailable = matches!(
-                (action, app.docker_daemon_running),
+                (action, daemon::podman_service_active()),
                 (DaemonAction::Start, true) | (DaemonAction::Stop, false)
             );
             let (label_color, desc_color) = if unavailable {
@@ -129,13 +130,13 @@ fn render_daemon_menu(frame: &mut Frame, app: &App) {
     );
 }
 
-fn render_password_prompt(frame: &mut Frame, app: &App) {
+fn render_service_confirmation(frame: &mut Frame, app: &App) {
     let area = centered_rect(72, 10, frame.area());
     frame.render_widget(Clear, area);
 
     let popup = theme::panel(
         Line::from(Span::styled(
-            " CONFIRM DAEMON ACTION ",
+            " CONFIRM PODMAN ACTION ",
             Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
         )),
         true,
@@ -143,7 +144,7 @@ fn render_password_prompt(frame: &mut Frame, app: &App) {
     let inner = popup.inner(area);
     frame.render_widget(popup, area);
 
-    let [action_area, input_area, hints_area] = Layout::vertical([
+    let [action_area, message_area, hints_area] = Layout::vertical([
         Constraint::Length(2),
         Constraint::Length(3),
         Constraint::Length(2),
@@ -151,9 +152,9 @@ fn render_password_prompt(frame: &mut Frame, app: &App) {
     .areas(inner);
 
     let title = match app.daemon_action_selected {
-        DaemonAction::Start => "Start Docker daemon",
-        DaemonAction::Stop => "Stop Docker daemon",
-        DaemonAction::Restart => "Restart Docker daemon",
+        DaemonAction::Start => "Start Podman API socket",
+        DaemonAction::Stop => "Stop Podman API socket",
+        DaemonAction::Restart => "Restart Podman API socket",
     };
 
     frame.render_widget(
@@ -167,23 +168,11 @@ fn render_password_prompt(frame: &mut Frame, app: &App) {
         action_area,
     );
 
-    let password_mask = "*".repeat(app.password_input.chars().count());
-    let input_text = if password_mask.is_empty() {
-        "Type sudo password...".to_string()
-    } else {
-        password_mask
-    };
-
     frame.render_widget(
-        Paragraph::new(input_text)
+        Paragraph::new("Podman runs without a daemon; this controls its optional API socket.")
             .alignment(Alignment::Left)
-            .style(if app.password_input.is_empty() {
-                Style::new().fg(Color::DarkGray)
-            } else {
-                Style::new().fg(Color::White)
-            })
-            .block(theme::panel(Line::from(" PASSWORD "), false)),
-        input_area,
+            .style(Style::new().fg(Color::DarkGray)),
+        message_area,
     );
 
     frame.render_widget(
@@ -204,17 +193,17 @@ fn action_label(action: DaemonAction) -> &'static str {
 
 fn action_description(action: DaemonAction) -> &'static str {
     match action {
-        DaemonAction::Start => "Bring up docker.service and docker.socket",
-        DaemonAction::Stop => "Stop active services first, then shut daemon down",
-        DaemonAction::Restart => "Stop active services first, then restart daemon",
+        DaemonAction::Start => "Bring up podman.socket",
+        DaemonAction::Stop => "Stop active services first, then stop the API socket",
+        DaemonAction::Restart => "Stop active services first, then restart the API socket",
     }
 }
 
 fn daemon_status_style(app: &App) -> (&'static str, Color) {
-    if app.docker_daemon_running {
-        ("RUNNING", Color::Green)
+    if app.podman_available {
+        ("READY", Color::Green)
     } else {
-        ("STOPPED", Color::Red)
+        ("UNAVAILABLE", Color::Red)
     }
 }
 

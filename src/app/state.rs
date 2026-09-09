@@ -4,7 +4,7 @@ use ratatui::text::Text;
 
 use crate::auto_restart::AutoRestartConfig;
 use crate::config::Keybinds;
-use crate::docker::events::EventListenerHandle;
+use crate::podman::events::EventListenerHandle;
 use crate::service::Service;
 use crate::status::ToastState;
 use crate::toast::Toast;
@@ -61,13 +61,12 @@ pub struct App {
 
     pub search_mode: bool,
     pub search_query: String,
-    pub docker_daemon_running: bool,
-    pub docker_command_available: bool,
-    pub docker_compose_available: bool,
+    pub podman_available: bool,
+    pub podman_command_available: bool,
+    pub podman_compose_available: bool,
     pub daemon_menu_mode: bool,
     pub daemon_action_selected: DaemonAction,
     pub daemon_start_mode: bool,
-    pub password_input: String,
     pub focus: Focus,
     pub first_status_check: bool,
     pub log_scroll: u16,

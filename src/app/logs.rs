@@ -51,57 +51,52 @@ impl App {
     }
 
     pub fn sync_live_log_listener(&mut self) {
-        // Only the selected live-log project needs a follower; avoid scanning every service per frame.
         if !self.podman_available {
-            if let Some(index) = self.live_log_service_index.take() {
-                self.stop_live_logs_for_service(index);
-            }
-            return;
-        }
-
-        let selected_index = self.state.selected();
-        let target_index = selected_index.filter(|&index| {
-            self.log_tab == crate::app::LogTab::LiveLogs
-                && self.services[index].status() == Status::Running
-        });
-
-        let listener_tracked =
-            target_index.is_some() && self.live_log_service_index == target_index;
-        let listener_is_active = target_index.is_some_and(|index| {
-            self.live_log_service_index == Some(index)
-                && self.services[index].live_logs_process_active()
-        });
-        if listener_is_active {
+            self.stop_live_logs_for_all_services();
             self.live_log_retry_cooldown_ticks = 0;
             return;
         }
-        if target_index.is_none() && self.live_log_service_index.is_none() {
-            self.live_log_retry_cooldown_ticks = 0;
-            return;
-        }
-        if listener_tracked && self.live_log_retry_cooldown_ticks > 0 {
+
+        let should_start_listeners = self.log_tab == crate::app::LogTab::LiveLogs;
+        let can_retry = self.live_log_retry_cooldown_ticks == 0;
+        if !can_retry {
             self.live_log_retry_cooldown_ticks =
                 self.live_log_retry_cooldown_ticks.saturating_sub(1);
-            return;
-        }
-        if listener_tracked {
-            self.live_log_retry_cooldown_ticks = Self::LIVE_LOG_RETRY_COOLDOWN_TICKS;
-        } else {
-            self.live_log_retry_cooldown_ticks = 0;
         }
 
-        if let Some(index) = self.live_log_service_index.take() {
-            self.stop_live_logs_for_service(index);
-        }
+        let mut retry_needed = false;
+        for index in 0..self.services.len() {
+            if self.services[index].status() != Status::Running {
+                if self.has_live_log_child(index) {
+                    self.stop_live_logs_for_service(index);
+                }
+                continue;
+            }
 
-        if let Some(index) = target_index {
-            if self.ensure_live_logs_for_service(index) {
-                self.live_log_service_index = Some(index);
-            } else {
-                self.live_log_service_index = Some(index);
-                self.live_log_retry_cooldown_ticks = Self::LIVE_LOG_RETRY_COOLDOWN_TICKS;
+            if !should_start_listeners || !can_retry {
+                continue;
+            }
+
+            if self.services[index].live_logs_process_active() {
+                continue;
+            }
+
+            if self.has_live_log_child(index) {
+                self.stop_live_logs_for_service(index);
+            }
+
+            if !self.ensure_live_logs_for_service(index) {
+                retry_needed = true;
             }
         }
+
+        if retry_needed {
+            self.live_log_retry_cooldown_ticks = Self::LIVE_LOG_RETRY_COOLDOWN_TICKS;
+        }
+    }
+
+    fn has_live_log_child(&self, index: usize) -> bool {
+        self.services[index].logs_child.lock().unwrap().is_some()
     }
 
     fn ensure_live_logs_for_service(&self, index: usize) -> bool {
@@ -139,8 +134,7 @@ impl App {
                 return true;
             }
 
-            let _ = child.kill();
-            let _ = child.wait();
+            ComposeProject::stop_logs_child(&mut child);
         }
 
         false
@@ -150,8 +144,7 @@ impl App {
         let service = &self.services[index];
         service.reset_live_logs();
         if let Some(mut child) = service.logs_child.lock().unwrap().take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            ComposeProject::stop_logs_child(&mut child);
         }
     }
 

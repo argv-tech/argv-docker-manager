@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::process::Stdio;
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -18,12 +19,18 @@ pub struct ProjectEventTargets {
 
 pub struct EventListenerHandle {
     shutdown: Arc<AtomicBool>,
+    child: Arc<Mutex<Option<Child>>>,
 }
 
 impl EventListenerHandle {
     pub fn signal_shutdown(&mut self) {
-        self.shutdown
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.shutdown.store(true, Ordering::Relaxed);
+
+        let child = self.child.lock().unwrap().take();
+        if let Some(mut child) = child {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -32,9 +39,10 @@ pub fn spawn_projects_listener(
 ) -> EventListenerHandle {
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = Arc::clone(&shutdown);
+    let child = Arc::new(Mutex::new(None));
+    let child_clone = Arc::clone(&child);
 
     thread::spawn(move || {
-        let mut since = chrono::Utc::now();
         seed_initial_events(&project_targets);
 
         loop {
@@ -42,35 +50,8 @@ pub fn spawn_projects_listener(
                 break;
             }
 
-            let until = chrono::Utc::now();
-            let mut cmd = std::process::Command::new(PODMAN_COMMAND);
-            cmd.arg("events")
-                .arg("--stream=false")
-                .arg("--filter")
-                .arg("type=container")
-                .arg("--format")
-                .arg(format_event_template())
-                .arg("--since")
-                .arg(since.to_rfc3339())
-                .arg("--until")
-                .arg(until.to_rfc3339());
-
-            match cmd.stderr(Stdio::null()).output() {
-                Ok(output) if output.status.success() => {
-                    for line in String::from_utf8_lossy(&output.stdout).lines() {
-                        if shutdown_clone.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        if let Some(event) = event_in_window(line, since, until) {
-                            handle_event_line(event, &project_targets);
-                        }
-                    }
-                    since = until;
-                }
-                Ok(_) | Err(_) => {
-                    // Podman events stream unavailable, retry shortly.
-                }
-            }
+            // Keep one streaming process alive instead of spawning Podman every polling interval.
+            run_event_stream(&project_targets, &shutdown_clone, &child_clone);
 
             if shutdown_clone.load(Ordering::Relaxed) {
                 break;
@@ -80,7 +61,54 @@ pub fn spawn_projects_listener(
         }
     });
 
-    EventListenerHandle { shutdown }
+    EventListenerHandle { shutdown, child }
+}
+
+fn run_event_stream(
+    project_targets: &HashMap<String, ProjectEventTargets>,
+    shutdown: &AtomicBool,
+    child_slot: &Mutex<Option<Child>>,
+) {
+    let mut command = Command::new(PODMAN_COMMAND);
+    command
+        .arg("events")
+        .arg("--filter")
+        .arg("type=container")
+        .arg("--format")
+        .arg(format_event_template())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    let Ok(mut child) = command.spawn() else {
+        return;
+    };
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return;
+    };
+
+    {
+        let mut slot = child_slot.lock().unwrap();
+        if shutdown.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return;
+        }
+        *slot = Some(child);
+    }
+
+    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        if shutdown.load(Ordering::Relaxed) {
+            break;
+        }
+        handle_event_line(&line, project_targets);
+    }
+
+    if let Some(mut child) = child_slot.lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 fn seed_initial_events(project_targets: &HashMap<String, ProjectEventTargets>) {
@@ -179,19 +207,8 @@ fn handle_event_line(line: &str, project_targets: &HashMap<String, ProjectEventT
 
 fn format_event_template() -> String {
     format!(
-        "{{{{.TimeNano}}}}\t{{{{.Status}}}}{{{{if eq .Status \"health_status\"}}}}: {{{{.HealthStatus}}}}{{{{end}}}}\t{{{{.Name}}}}\t{{{{.ContainerExitCode}}}}\t{{{{index .Attributes \"{COMPOSE_PROJECT_LABEL}\"}}}}\t{{{{index .Attributes \"{LEGACY_COMPOSE_PROJECT_LABEL}\"}}}}"
+        "{{{{.Status}}}}{{{{if eq .Status \"health_status\"}}}}: {{{{.HealthStatus}}}}{{{{end}}}}\t{{{{.Name}}}}\t{{{{.ContainerExitCode}}}}\t{{{{index .Attributes \"{COMPOSE_PROJECT_LABEL}\"}}}}\t{{{{index .Attributes \"{LEGACY_COMPOSE_PROJECT_LABEL}\"}}}}"
     )
-}
-
-fn event_in_window(
-    line: &str,
-    since: chrono::DateTime<chrono::Utc>,
-    until: chrono::DateTime<chrono::Utc>,
-) -> Option<&str> {
-    let (timestamp, event) = line.split_once('\t')?;
-    let timestamp = chrono::DateTime::from_timestamp_nanos(timestamp.parse().ok()?);
-    // Adjacent polls share a boundary, but each event belongs to exactly one window.
-    (timestamp > since && timestamp <= until).then_some(event)
 }
 
 fn normalize_template_value(value: &str) -> String {
@@ -243,17 +260,6 @@ fn append_event_log_entry(logs: &mut LogBuffer, project: &str, container_name: &
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn polling_windows_reject_history_and_do_not_repeat_boundary_events() {
-        let since = chrono::DateTime::from_timestamp_nanos(100);
-        let until = chrono::DateTime::from_timestamp_nanos(200);
-        assert_eq!(event_in_window("99\tcreate", since, until), None);
-        assert_eq!(event_in_window("100\tcreate", since, until), None);
-        assert_eq!(event_in_window("150\tstart", since, until), Some("start"));
-        assert_eq!(event_in_window("200\tstop", since, until), Some("stop"));
-        assert_eq!(event_in_window("201\tstop", since, until), None);
-    }
 
     #[test]
     fn create_event_preserves_a_failed_start() {

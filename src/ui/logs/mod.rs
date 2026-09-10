@@ -17,12 +17,13 @@ use title::logs_title;
 use super::theme;
 
 pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
-    let title = logs_title(app);
     let progress_line = refresh_logs_cache(app);
     let progress_line_count = if progress_line.is_some() { 2 } else { 0 };
     let total_lines = app
         .logs_render_cache
-        .body_line_count
+        .entry(app.state.selected(), app.log_tab)
+        .map(|cache| cache.body_line_count)
+        .unwrap_or(0)
         .saturating_add(progress_line_count);
 
     if app.log_auto_scroll {
@@ -30,42 +31,47 @@ pub fn render(frame: &mut Frame, app: &mut App, area: Rect) {
         app.log_scroll = total_lines.saturating_sub(visible_lines);
     }
 
-    let block = theme::panel(title, app.focus == Focus::Logs);
+    let block = theme::panel(logs_title(app), app.focus == Focus::Logs);
     let body_area = block.inner(area);
     frame.render_widget(block, area);
     frame
         .buffer_mut()
         .set_style(body_area, Style::new().fg(theme::TEXT));
 
-    render_log_lines(
-        frame,
-        &app.logs_render_cache.body,
-        progress_line.as_ref(),
-        body_area,
-        app.log_scroll,
-    );
+    if let Some(cache) = app
+        .logs_render_cache
+        .entry(app.state.selected(), app.log_tab)
+    {
+        render_log_lines(
+            frame,
+            &cache.body,
+            progress_line.as_ref(),
+            body_area,
+            app.log_scroll,
+        );
+    }
 }
 
 fn refresh_logs_cache(app: &mut App) -> Option<Line<'static>> {
     let Some(index) = app.state.selected() else {
-        if app.logs_render_cache.service_index.is_some()
-            || app.logs_render_cache.body_line_count == 0
-        {
+        if app.logs_render_cache.entry(None, app.log_tab).is_none() {
             let (body, body_line_count) = placeholder_text("Select a service to view activity");
-            app.logs_render_cache = crate::app::state::LogsRenderCache {
-                service_index: None,
-                tab: app.log_tab,
-                buffer_revision: 0,
-                body,
-                body_line_count,
-            };
+            app.logs_render_cache
+                .insert(crate::app::state::LogsRenderCacheEntry {
+                    service_index: None,
+                    tab: app.log_tab,
+                    buffer_revision: 0,
+                    body,
+                    body_line_count,
+                });
         }
         return None;
     };
 
-    let cached_revision = (app.logs_render_cache.service_index == Some(index)
-        && app.logs_render_cache.tab == app.log_tab)
-        .then_some(app.logs_render_cache.buffer_revision);
+    let cached_revision = app
+        .logs_render_cache
+        .entry(Some(index), app.log_tab)
+        .map(|cache| cache.buffer_revision);
 
     let snapshot = {
         let service = &app.services[index];
@@ -99,13 +105,14 @@ fn refresh_logs_cache(app: &mut App) -> Option<Line<'static>> {
             }
         };
 
-        app.logs_render_cache = crate::app::state::LogsRenderCache {
-            service_index: Some(index),
-            tab: app.log_tab,
-            buffer_revision,
-            body_line_count: u16::try_from(body.lines.len()).unwrap_or(u16::MAX),
-            body,
-        };
+        app.logs_render_cache
+            .insert(crate::app::state::LogsRenderCacheEntry {
+                service_index: Some(index),
+                tab: app.log_tab,
+                buffer_revision,
+                body_line_count: u16::try_from(body.lines.len()).unwrap_or(u16::MAX),
+                body,
+            });
     }
 
     if app.log_tab == LogTab::Events {
@@ -157,7 +164,10 @@ mod tests {
     fn test_app() -> App {
         App {
             state: ratatui::widgets::ListState::default(),
-            services: vec![Service::new("redis".to_string())],
+            services: vec![
+                Service::new("redis".to_string()),
+                Service::new("postgres".to_string()),
+            ],
             project_root: std::env::temp_dir(),
             auto_restart: Default::default(),
             toast: None,
@@ -213,18 +223,33 @@ mod tests {
         app.state.select(Some(0));
 
         let _ = refresh_logs_cache(&mut app);
-        app.logs_render_cache.body = Text::from("sentinel");
-        app.logs_render_cache.body_line_count = 1;
+        let cache = app
+            .logs_render_cache
+            .entry_mut(Some(0), LogTab::Events)
+            .unwrap();
+        cache.body = Text::from("sentinel");
+        cache.body_line_count = 1;
 
         let _ = refresh_logs_cache(&mut app);
 
         assert_eq!(
-            app.logs_render_cache.body.lines[0].spans[0]
+            app.logs_render_cache
+                .entry(Some(0), LogTab::Events)
+                .unwrap()
+                .body
+                .lines[0]
+                .spans[0]
                 .content
                 .as_ref(),
             "sentinel"
         );
-        assert_eq!(app.logs_render_cache.body_line_count, 1);
+        assert_eq!(
+            app.logs_render_cache
+                .entry(Some(0), LogTab::Events)
+                .unwrap()
+                .body_line_count,
+            1
+        );
     }
 
     #[test]
@@ -233,8 +258,12 @@ mod tests {
         app.state.select(Some(0));
 
         let _ = refresh_logs_cache(&mut app);
-        app.logs_render_cache.body = Text::from("stale");
-        app.logs_render_cache.body_line_count = 1;
+        let cache = app
+            .logs_render_cache
+            .entry_mut(Some(0), LogTab::Events)
+            .unwrap();
+        cache.body = Text::from("stale");
+        cache.body_line_count = 1;
         app.services[0]
             .events
             .lock()
@@ -244,10 +273,46 @@ mod tests {
         let _ = refresh_logs_cache(&mut app);
 
         assert_ne!(
-            app.logs_render_cache.body.lines[0].spans[0]
+            app.logs_render_cache
+                .entry(Some(0), LogTab::Events)
+                .unwrap()
+                .body
+                .lines[0]
+                .spans[0]
                 .content
                 .as_ref(),
             "stale"
+        );
+    }
+
+    #[test]
+    fn refresh_logs_cache_reuses_unchanged_service_body_after_switching_back() {
+        let mut app = test_app();
+        app.state.select(Some(0));
+
+        let _ = refresh_logs_cache(&mut app);
+        let cache = app
+            .logs_render_cache
+            .entry_mut(Some(0), LogTab::Events)
+            .unwrap();
+        cache.body = Text::from("sentinel");
+        cache.body_line_count = 1;
+
+        app.state.select(Some(1));
+        let _ = refresh_logs_cache(&mut app);
+        app.state.select(Some(0));
+        let _ = refresh_logs_cache(&mut app);
+
+        assert_eq!(
+            app.logs_render_cache
+                .entry(Some(0), LogTab::Events)
+                .unwrap()
+                .body
+                .lines[0]
+                .spans[0]
+                .content
+                .as_ref(),
+            "sentinel"
         );
     }
 

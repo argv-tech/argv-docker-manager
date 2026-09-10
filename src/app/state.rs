@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use ratatui::text::Text;
@@ -16,7 +17,7 @@ pub enum Focus {
     Logs,
 }
 
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum LogTab {
     #[default]
     Events,
@@ -31,7 +32,7 @@ pub enum DaemonAction {
     Restart,
 }
 
-pub struct LogsRenderCache {
+pub struct LogsRenderCacheEntry {
     pub service_index: Option<usize>,
     pub tab: LogTab,
     pub buffer_revision: u64,
@@ -39,14 +40,53 @@ pub struct LogsRenderCache {
     pub body_line_count: u16,
 }
 
+pub struct LogsRenderCache {
+    entries: VecDeque<LogsRenderCacheEntry>,
+}
+
+impl LogsRenderCache {
+    const CAPACITY: usize = 8;
+
+    pub fn entry(
+        &self,
+        service_index: Option<usize>,
+        tab: LogTab,
+    ) -> Option<&LogsRenderCacheEntry> {
+        self.entries
+            .iter()
+            .find(|entry| entry.service_index == service_index && entry.tab == tab)
+    }
+
+    #[cfg(test)]
+    pub fn entry_mut(
+        &mut self,
+        service_index: Option<usize>,
+        tab: LogTab,
+    ) -> Option<&mut LogsRenderCacheEntry> {
+        self.entries
+            .iter_mut()
+            .find(|entry| entry.service_index == service_index && entry.tab == tab)
+    }
+
+    pub fn insert(&mut self, entry: LogsRenderCacheEntry) {
+        if let Some(position) = self.entries.iter().position(|cached| {
+            cached.service_index == entry.service_index && cached.tab == entry.tab
+        }) {
+            self.entries.remove(position);
+        }
+
+        if self.entries.len() == Self::CAPACITY {
+            self.entries.pop_front();
+        }
+
+        self.entries.push_back(entry);
+    }
+}
+
 impl Default for LogsRenderCache {
     fn default() -> Self {
         Self {
-            service_index: None,
-            tab: LogTab::Events,
-            buffer_revision: 0,
-            body: Text::from(""),
-            body_line_count: 0,
+            entries: VecDeque::with_capacity(Self::CAPACITY),
         }
     }
 }

@@ -80,7 +80,7 @@ fn handle_normal_mode(app: &mut App, code: KeyCode, keys: &Keys) {
         }
         KeyCode::Char(c) if c == keys.refresh => {
             app.refresh_statuses();
-            app.set_toast(ToastState::Info, "Refreshed statuses", 3);
+            app.set_toast(ToastState::Info, "Refreshing statuses", 3);
         }
         KeyCode::Char(c) if c == keys.switch_tab_left => toggle_log_tab(app),
         KeyCode::Char(c) if c == keys.switch_tab_right => toggle_log_tab(app),

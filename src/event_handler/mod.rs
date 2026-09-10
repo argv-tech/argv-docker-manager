@@ -37,15 +37,11 @@ pub async fn handle_events(app: &mut App, poll_timeout: Duration) -> io::Result<
 }
 
 fn refresh_periodically(app: &mut App) {
-    const STATUS_REFRESH_COOLDOWN_TICKS: u8 = 24;
-
-    if app.status_refresh_cooldown_ticks > 0 {
-        app.status_refresh_cooldown_ticks = app.status_refresh_cooldown_ticks.saturating_sub(1);
-        return;
+    app.apply_status_refresh();
+    if std::time::Instant::now() >= app.next_status_refresh {
+        app.refresh_statuses();
+        app.next_status_refresh = std::time::Instant::now() + Duration::from_secs(1);
     }
-
-    app.refresh_statuses();
-    app.status_refresh_cooldown_ticks = STATUS_REFRESH_COOLDOWN_TICKS;
 }
 
 fn update_toast_timer(app: &mut App) {

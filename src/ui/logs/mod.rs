@@ -183,7 +183,8 @@ mod tests {
             log_auto_scroll: true,
             log_tab: LogTab::Events,
             animation_tick: 0,
-            status_refresh_cooldown_ticks: 0,
+            next_status_refresh: std::time::Instant::now(),
+            status_refresh_task: None,
             runtime_probe_cooldown_ticks: 0,
             event_listener_running: false,
             event_listener_handle: None,
@@ -211,6 +212,28 @@ mod tests {
                 },
             },
         }
+    }
+
+    #[test]
+    fn navigation_does_not_wait_for_pending_status_refresh() {
+        let mut app = test_app();
+        let (release, wait) = std::sync::mpsc::channel::<()>();
+        app.status_refresh_task = Some(std::thread::spawn(move || {
+            let _ = wait.recv();
+            Default::default()
+        }));
+
+        // The worker cannot finish until after navigation and result polling return.
+        app.refresh_statuses();
+        app.next();
+        app.apply_status_refresh();
+        app.next();
+        app.previous();
+        assert_eq!(app.state.selected(), Some(0));
+        assert!(!app.status_refresh_task.as_ref().unwrap().is_finished());
+
+        release.send(()).unwrap();
+        assert!(app.status_refresh_task.take().unwrap().join().is_ok());
     }
 
     #[test]

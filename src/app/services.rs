@@ -12,13 +12,13 @@ use crate::status::{Status, ToastState};
 
 impl App {
     pub fn refresh_statuses(&mut self) {
-        const DAEMON_PROBE_COOLDOWN_TICKS: u8 = 60;
+        const RUNTIME_PROBE_COOLDOWN_TICKS: u8 = 60;
 
         let should_probe_runtime = self.first_status_check
-            || self.daemon_probe_cooldown_ticks == 0
+            || self.runtime_probe_cooldown_ticks == 0
             || !self.podman_available;
         let runtime_available = if should_probe_runtime {
-            self.daemon_probe_cooldown_ticks = DAEMON_PROBE_COOLDOWN_TICKS;
+            self.runtime_probe_cooldown_ticks = RUNTIME_PROBE_COOLDOWN_TICKS;
             PodmanClient::podman_info_ok()
         } else {
             self.podman_available

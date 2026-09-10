@@ -20,7 +20,6 @@ ARGV Podman Manager (`argv-podman-manager`) is a Rust terminal interface for man
 - Start, stop, and toggle service states
 - View live container logs and Podman events
 - Search/filter services
-- Podman API socket control (start/stop/restart)
 - Toast notifications for actions
 - Configurable keybinds
 - Per-project auto-restart selection at boot
@@ -64,7 +63,6 @@ The top status rail shows the app version, Podman health, running-project count,
 
 **General:**
 - `r`: Refresh services status
-- `d`: Open Podman API socket control menu
 - `q`: Quit
 
 Keybinds are configurable in `keybinds.toml`.
@@ -170,7 +168,7 @@ The `run.sh` script provides an interactive way to start multiple containers.
 - **fd** - fast file finder
 - **fzf** - fuzzy finder for interactive selection
 - **tmux** - terminal multiplexer (required for multi-window experience)
-- **systemd** - optional, for managing the Podman API socket and auto-restart unit
+- **systemd** - optional, for managing the auto-restart unit
 
 ### How to use
 1. Make the script executable:

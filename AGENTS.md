@@ -24,7 +24,7 @@
 
 ## Keybinds (configurable in keybinds.toml)
 
-- App: q=quit, /=search, d=daemon, r=refresh, h=focus services, l=focus logs,
+- App: q=quit, /=search, r=refresh, h=focus services, l=focus logs,
   j/k=scroll
 - Services: s=toggle start/stop, a=toggle auto-restart
 - Logs: space=toggle auto-scroll, t=switch tabs

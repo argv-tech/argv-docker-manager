@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::app::state::{App, DaemonAction, Focus, LogTab};
+use crate::app::state::{App, Focus, LogTab};
 use crate::auto_restart::AutoRestartConfig;
 use crate::config::Keybinds;
 use crate::podman::client::PodmanClient;
@@ -76,9 +76,6 @@ impl App {
             podman_available,
             podman_command_available,
             podman_compose_available,
-            daemon_menu_mode: false,
-            daemon_action_selected: DaemonAction::Start,
-            daemon_start_mode: false,
             focus: Focus::Services,
             first_status_check: true,
             log_scroll: 0,
@@ -86,7 +83,7 @@ impl App {
             log_tab: LogTab::Events,
             animation_tick: 0,
             status_refresh_cooldown_ticks: 0,
-            daemon_probe_cooldown_ticks: 0,
+            runtime_probe_cooldown_ticks: 0,
             event_listener_running: false,
             event_listener_handle: None,
             toast_tick_accumulator: 0,

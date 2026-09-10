@@ -4,7 +4,7 @@ use crate::app::{App, Focus, LogTab};
 use crate::status::{Status, ToastState};
 
 use super::keys::Keys;
-use super::overlays::{daemon_next, daemon_previous, in_overlay_mode, select_searched_service};
+use super::overlays::{in_overlay_mode, select_searched_service};
 
 pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
     if matches!(code, KeyCode::Char(c) if c == keys.quit) && !in_overlay_mode(app) {
@@ -20,32 +20,15 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
         return true;
     }
 
-    if matches!(code, KeyCode::Char(c) if c == keys.daemon) && !in_overlay_mode(app) {
-        app.daemon_menu_mode = true;
-        app.daemon_action_selected = crate::app::DaemonAction::Start;
-        return true;
-    }
-
     match code {
-        KeyCode::Esc => {
-            if in_overlay_mode(app) {
-                app.search_mode = false;
-                app.daemon_start_mode = false;
-                app.daemon_menu_mode = false;
-                app.search_query.clear();
-            }
+        KeyCode::Esc if app.search_mode => {
+            app.search_mode = false;
+            app.search_query.clear();
         }
-        KeyCode::Enter => {
-            if app.search_mode {
-                select_searched_service(app);
-                app.search_mode = false;
-                app.search_query.clear();
-            } else if app.daemon_menu_mode {
-                app.daemon_menu_mode = false;
-                app.daemon_start_mode = true;
-            } else if app.daemon_start_mode {
-                app.execute_daemon_action();
-            }
+        KeyCode::Enter if app.search_mode => {
+            select_searched_service(app);
+            app.search_mode = false;
+            app.search_query.clear();
         }
         _ if app.search_mode => match code {
             KeyCode::Char(c) => app.search_query.push(c),
@@ -54,14 +37,6 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
             }
             _ => {}
         },
-        _ if app.daemon_menu_mode => match code {
-            KeyCode::Char(c) if c == keys.scroll_down => daemon_next(app),
-            KeyCode::Down => daemon_next(app),
-            KeyCode::Char(c) if c == keys.scroll_up => daemon_previous(app),
-            KeyCode::Up => daemon_previous(app),
-            _ => {}
-        },
-        _ if app.daemon_start_mode => {}
         _ => handle_normal_mode(app, code, keys),
     }
 

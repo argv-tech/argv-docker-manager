@@ -14,8 +14,8 @@ use keys::Keys;
 
 pub async fn handle_events(app: &mut App, poll_timeout: Duration) -> io::Result<bool> {
     app.animation_tick = app.animation_tick.wrapping_add(1);
-    if app.daemon_probe_cooldown_ticks > 0 {
-        app.daemon_probe_cooldown_ticks = app.daemon_probe_cooldown_ticks.saturating_sub(1);
+    if app.runtime_probe_cooldown_ticks > 0 {
+        app.runtime_probe_cooldown_ticks = app.runtime_probe_cooldown_ticks.saturating_sub(1);
     }
 
     let keys = Keys::from_app(app);

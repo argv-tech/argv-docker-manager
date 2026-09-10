@@ -3,7 +3,6 @@ use crate::app::App;
 pub(super) struct Keys {
     pub quit: char,
     pub search: char,
-    pub daemon: char,
     pub scroll_down: char,
     pub scroll_up: char,
     pub focus_services: char,
@@ -21,7 +20,6 @@ impl Keys {
         Self {
             quit: app.keybinds.app.quit.chars().next().unwrap_or('q'),
             search: app.keybinds.app.search.chars().next().unwrap_or('/'),
-            daemon: app.keybinds.app.daemon_menu.chars().next().unwrap_or('d'),
             scroll_down: app.keybinds.app.scroll_down.chars().next().unwrap_or('j'),
             scroll_up: app.keybinds.app.scroll_up.chars().next().unwrap_or('k'),
             focus_services: app

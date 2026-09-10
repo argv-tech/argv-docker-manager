@@ -24,14 +24,6 @@ pub enum LogTab {
     LiveLogs,
 }
 
-#[derive(Clone, Copy, PartialEq, Default)]
-pub enum DaemonAction {
-    #[default]
-    Start,
-    Stop,
-    Restart,
-}
-
 pub struct LogsRenderCacheEntry {
     pub service_index: Option<usize>,
     pub tab: LogTab,
@@ -104,9 +96,6 @@ pub struct App {
     pub podman_available: bool,
     pub podman_command_available: bool,
     pub podman_compose_available: bool,
-    pub daemon_menu_mode: bool,
-    pub daemon_action_selected: DaemonAction,
-    pub daemon_start_mode: bool,
     pub focus: Focus,
     pub first_status_check: bool,
     pub log_scroll: u16,
@@ -114,7 +103,7 @@ pub struct App {
     pub log_tab: LogTab,
     pub animation_tick: u64,
     pub status_refresh_cooldown_ticks: u8,
-    pub daemon_probe_cooldown_ticks: u8,
+    pub runtime_probe_cooldown_ticks: u8,
     pub event_listener_running: bool,
     pub event_listener_handle: Option<EventListenerHandle>,
     pub toast_tick_accumulator: u8,

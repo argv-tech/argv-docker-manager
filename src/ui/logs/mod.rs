@@ -156,7 +156,7 @@ fn render_log_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{DaemonAction, Focus, LogTab};
+    use crate::app::{Focus, LogTab};
     use crate::config::{AppKeys, Keybinds, LogsKeys, ServicesKeys};
     use crate::service::Service;
     use ratatui::{Terminal, backend::TestBackend};
@@ -177,9 +177,6 @@ mod tests {
             podman_available: true,
             podman_command_available: true,
             podman_compose_available: true,
-            daemon_menu_mode: false,
-            daemon_action_selected: DaemonAction::Start,
-            daemon_start_mode: false,
             focus: Focus::Logs,
             first_status_check: false,
             log_scroll: 0,
@@ -187,7 +184,7 @@ mod tests {
             log_tab: LogTab::Events,
             animation_tick: 0,
             status_refresh_cooldown_ticks: 0,
-            daemon_probe_cooldown_ticks: 0,
+            runtime_probe_cooldown_ticks: 0,
             event_listener_running: false,
             event_listener_handle: None,
             toast_tick_accumulator: 0,
@@ -197,7 +194,6 @@ mod tests {
                 app: AppKeys {
                     quit: "q".to_string(),
                     search: "/".to_string(),
-                    daemon_menu: "d".to_string(),
                     refresh: "r".to_string(),
                     switch_tab_left: "[".to_string(),
                     switch_tab_right: "]".to_string(),

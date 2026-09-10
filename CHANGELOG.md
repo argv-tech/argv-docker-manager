@@ -1,4 +1,4 @@
-# ARGV Docker Manager Changelog
+# ARGV Podman Manager Changelog
 
 All notable changes to this project will be documented in this file.
 
@@ -146,5 +146,4 @@ All notable changes to this project will be documented in this file.
 - *(ai)* Update AGENTS
 - Name and version
 - Fix jobs
-
 

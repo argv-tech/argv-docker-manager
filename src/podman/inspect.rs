@@ -1,6 +1,11 @@
 use std::process::Command;
 
-const PROJECT_TEMPLATE: &str = "{{index .Config.Labels \"com.docker.compose.project\"}}";
+use super::{COMPOSE_PROJECT_LABEL, LEGACY_COMPOSE_PROJECT_LABEL, PODMAN_COMMAND};
+
+const PROJECT_TEMPLATE: &str = concat!(
+    "{{index .Config.Labels \"io.podman.compose.project\"}}\t",
+    "{{index .Config.Labels \"com.docker.compose.project\"}}"
+);
 const RUNTIME_TEMPLATE: &str = concat!(
     "{{range $k, $v := .NetworkSettings.Networks}}",
     "{{$k}}={{$v.IPAddress}} {{end}}\t",
@@ -24,7 +29,13 @@ impl Default for ContainerRuntimeDetails {
 }
 
 pub fn project_name(container_name: &str) -> Option<String> {
-    inspect_value(container_name, PROJECT_TEMPLATE)
+    inspect_value(container_name, PROJECT_TEMPLATE).and_then(|value| {
+        value
+            .split('\t')
+            .map(str::trim)
+            .find(|value| !value.is_empty() && *value != "<no value>")
+            .map(ToOwned::to_owned)
+    })
 }
 
 pub fn runtime_details(container_name: &str) -> ContainerRuntimeDetails {
@@ -34,15 +45,15 @@ pub fn runtime_details(container_name: &str) -> ContainerRuntimeDetails {
 }
 
 pub fn project_containers(project: &str) -> Vec<String> {
-    let output = Command::new("docker")
+    let output = Command::new(PODMAN_COMMAND)
         .arg("ps")
         .arg("--filter")
-        .arg(format!("label=com.docker.compose.project={project}"))
+        .arg(format!("label={COMPOSE_PROJECT_LABEL}={project}"))
         .arg("--format")
         .arg("{{.Names}}")
         .output();
 
-    match output {
+    let podman_containers = match output {
         Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
             .lines()
             .map(str::trim)
@@ -50,11 +61,34 @@ pub fn project_containers(project: &str) -> Vec<String> {
             .map(ToOwned::to_owned)
             .collect(),
         _ => Vec::new(),
+    };
+
+    if !podman_containers.is_empty() {
+        return podman_containers;
     }
+
+    Command::new(PODMAN_COMMAND)
+        .arg("ps")
+        .arg("--filter")
+        .arg(format!("label={LEGACY_COMPOSE_PROJECT_LABEL}={project}"))
+        .arg("--format")
+        .arg("{{.Names}}")
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| {
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn inspect_value(container_name: &str, template: &str) -> Option<String> {
-    let output = Command::new("docker")
+    let output = Command::new(PODMAN_COMMAND)
         .arg("inspect")
         .arg("--format")
         .arg(template)

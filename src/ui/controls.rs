@@ -56,7 +56,6 @@ fn controls_line(app: &App) -> Line<'static> {
             (app_keys.search.clone(), "filter"),
             (navigation_key, "move"),
             (app_keys.focus_logs.clone(), "activity"),
-            (app_keys.daemon_menu.clone(), "daemon"),
             (app_keys.quit.clone(), "quit"),
         ])
     } else {

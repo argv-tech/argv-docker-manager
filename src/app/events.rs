@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::app::state::App;
-use crate::docker::events::{ProjectEventTargets, append_project_event, spawn_projects_listener};
+use crate::podman::events::{ProjectEventTargets, append_project_event, spawn_projects_listener};
 
 impl App {
     pub fn start_event_listeners(&mut self) {
@@ -9,7 +9,7 @@ impl App {
             return;
         }
 
-        if !self.docker_daemon_running {
+        if !self.podman_available {
             return;
         }
 

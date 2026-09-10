@@ -13,7 +13,6 @@ pub struct Keybinds {
 pub struct AppKeys {
     pub quit: String,
     pub search: String,
-    pub daemon_menu: String,
     pub refresh: String,
     pub switch_tab_left: String,
     pub switch_tab_right: String,

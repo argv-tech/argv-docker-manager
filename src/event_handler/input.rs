@@ -4,7 +4,7 @@ use crate::app::{App, Focus, LogTab};
 use crate::status::{Status, ToastState};
 
 use super::keys::Keys;
-use super::overlays::{daemon_next, daemon_previous, in_overlay_mode, select_searched_service};
+use super::overlays::{in_overlay_mode, select_searched_service};
 
 pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
     if matches!(code, KeyCode::Char(c) if c == keys.quit) && !in_overlay_mode(app) {
@@ -20,53 +20,20 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
         return true;
     }
 
-    if matches!(code, KeyCode::Char(c) if c == keys.daemon) && !in_overlay_mode(app) {
-        app.daemon_menu_mode = true;
-        app.daemon_action_selected = crate::app::DaemonAction::Start;
-        return true;
-    }
-
     match code {
-        KeyCode::Esc => {
-            if in_overlay_mode(app) {
-                app.search_mode = false;
-                app.daemon_start_mode = false;
-                app.daemon_menu_mode = false;
-                app.search_query.clear();
-                app.password_input.clear();
-            }
+        KeyCode::Esc if app.search_mode => {
+            app.search_mode = false;
+            app.search_query.clear();
         }
-        KeyCode::Enter => {
-            if app.search_mode {
-                select_searched_service(app);
-                app.search_mode = false;
-                app.search_query.clear();
-            } else if app.daemon_menu_mode {
-                app.daemon_menu_mode = false;
-                app.daemon_start_mode = true;
-                app.password_input.clear();
-            } else if app.daemon_start_mode {
-                app.execute_daemon_action();
-            }
+        KeyCode::Enter if app.search_mode => {
+            select_searched_service(app);
+            app.search_mode = false;
+            app.search_query.clear();
         }
         _ if app.search_mode => match code {
             KeyCode::Char(c) => app.search_query.push(c),
             KeyCode::Backspace => {
                 app.search_query.pop();
-            }
-            _ => {}
-        },
-        _ if app.daemon_menu_mode => match code {
-            KeyCode::Char(c) if c == keys.scroll_down => daemon_next(app),
-            KeyCode::Down => daemon_next(app),
-            KeyCode::Char(c) if c == keys.scroll_up => daemon_previous(app),
-            KeyCode::Up => daemon_previous(app),
-            _ => {}
-        },
-        _ if app.daemon_start_mode => match code {
-            KeyCode::Char(c) => app.password_input.push(c),
-            KeyCode::Backspace => {
-                app.password_input.pop();
             }
             _ => {}
         },
@@ -113,7 +80,7 @@ fn handle_normal_mode(app: &mut App, code: KeyCode, keys: &Keys) {
         }
         KeyCode::Char(c) if c == keys.refresh => {
             app.refresh_statuses();
-            app.set_toast(ToastState::Info, "Refreshed statuses", 3);
+            app.set_toast(ToastState::Info, "Refreshing statuses", 3);
         }
         KeyCode::Char(c) if c == keys.switch_tab_left => toggle_log_tab(app),
         KeyCode::Char(c) if c == keys.switch_tab_right => toggle_log_tab(app),

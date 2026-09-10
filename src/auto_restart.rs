@@ -7,10 +7,12 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::docker::compose::ComposeProject;
+use crate::podman::PODMAN_COMMAND;
+use crate::podman::compose::ComposeProject;
 
-const CONFIG_FILE: &str = ".argv-docker-manager-autorestart.toml";
-const LEGACY_CONFIG_FILE: &str = ".docker-manager-autorestart.toml";
+const CONFIG_FILE: &str = ".argv-podman-manager-autorestart.toml";
+const LEGACY_CONFIG_FILE: &str = ".argv-docker-manager-autorestart.toml";
+const OLDER_LEGACY_CONFIG_FILE: &str = ".docker-manager-autorestart.toml";
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AutoRestartConfig {
@@ -28,7 +30,18 @@ impl AutoRestartConfig {
                 match fs::read_to_string(&legacy_path) {
                     Ok(content) => (legacy_path, content),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        return Ok(Self::default());
+                        let older_legacy_path = older_legacy_config_path(project_root);
+                        match fs::read_to_string(&older_legacy_path) {
+                            Ok(content) => (older_legacy_path, content),
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                                return Ok(Self::default());
+                            }
+                            Err(error) => {
+                                return Err(error).with_context(|| {
+                                    format!("failed to read {}", older_legacy_path.display())
+                                });
+                            }
+                        }
                     }
                     Err(error) => {
                         return Err(error)
@@ -93,8 +106,8 @@ pub fn start_configured_services(project_root: &Path) -> Result<()> {
         return Ok(());
     }
 
-    eprintln!("waiting for Docker daemon...");
-    wait_for_docker()?;
+    eprintln!("waiting for Podman runtime...");
+    wait_for_podman()?;
 
     let mut failures = Vec::new();
 
@@ -113,12 +126,12 @@ pub fn start_configured_services(project_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn wait_for_docker() -> Result<()> {
+fn wait_for_podman() -> Result<()> {
     const MAX_ATTEMPTS: u32 = 30;
     const RETRY_DELAY: Duration = Duration::from_secs(2);
 
     for attempt in 1..=MAX_ATTEMPTS {
-        let status = Command::new("docker")
+        let status = Command::new(PODMAN_COMMAND)
             .args(["info"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -126,13 +139,13 @@ fn wait_for_docker() -> Result<()> {
 
         match status {
             Ok(s) if s.success() => {
-                eprintln!("Docker daemon is ready");
+                eprintln!("Podman runtime is ready");
                 return Ok(());
             }
             _ => {
                 if attempt < MAX_ATTEMPTS {
                     eprintln!(
-                        "Docker not ready, retrying in {RETRY_DELAY:?} ({attempt}/{MAX_ATTEMPTS})"
+                        "Podman not ready, retrying in {RETRY_DELAY:?} ({attempt}/{MAX_ATTEMPTS})"
                     );
                     std::thread::sleep(RETRY_DELAY);
                 }
@@ -140,7 +153,7 @@ fn wait_for_docker() -> Result<()> {
         }
     }
 
-    bail!("Docker daemon did not become ready after {MAX_ATTEMPTS} attempts");
+    bail!("Podman runtime did not become ready after {MAX_ATTEMPTS} attempts");
 }
 
 pub fn config_path(project_root: &Path) -> PathBuf {
@@ -149,6 +162,10 @@ pub fn config_path(project_root: &Path) -> PathBuf {
 
 fn legacy_config_path(project_root: &Path) -> PathBuf {
     project_root.join(LEGACY_CONFIG_FILE)
+}
+
+fn older_legacy_config_path(project_root: &Path) -> PathBuf {
+    project_root.join(OLDER_LEGACY_CONFIG_FILE)
 }
 
 fn temporary_config_path(project_root: &Path) -> PathBuf {
@@ -164,10 +181,7 @@ fn validate_service(project_root: &Path, service_name: &str) -> Result<()> {
         bail!("invalid auto-restart service name: {service_name}");
     }
 
-    let compose_path = project_root
-        .join("containers")
-        .join(service_name)
-        .join("docker-compose.yml");
+    let compose_path = ComposeProject::at(project_root, service_name).compose_file();
     if !compose_path.is_file() {
         bail!("compose file not found: {}", compose_path.display());
     }
@@ -192,7 +206,7 @@ mod tests {
     use super::*;
 
     fn temporary_project(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("argv-docker-manager-{name}-{}", std::process::id()))
+        std::env::temp_dir().join(format!("argv-podman-manager-{name}-{}", std::process::id()))
     }
 
     #[test]

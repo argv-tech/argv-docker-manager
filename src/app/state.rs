@@ -103,7 +103,7 @@ pub struct App {
     pub log_tab: LogTab,
     pub animation_tick: u64,
     pub next_status_refresh: std::time::Instant,
-    pub status_refresh_task: Option<std::thread::JoinHandle<super::services::StatusSnapshot>>,
+    pub status_refresh_task: Option<tokio::task::JoinHandle<super::services::StatusSnapshot>>,
     pub runtime_probe_cooldown_ticks: u8,
     pub event_listener_running: bool,
     pub event_listener_handle: Option<EventListenerHandle>,

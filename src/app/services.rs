@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::thread;
 
 use crate::app::compose_images;
 use crate::app::pull_progress;
@@ -36,7 +35,7 @@ impl App {
             .iter()
             .map(|service| (service.name.clone(), service.status()))
             .collect();
-        self.status_refresh_task = Some(thread::spawn(move || {
+        self.status_refresh_task = Some(tokio::task::spawn_blocking(move || {
             let runtime_available = if should_probe_runtime {
                 PodmanClient::podman_info_ok()
             } else {
@@ -55,7 +54,7 @@ impl App {
         }));
     }
 
-    pub fn apply_status_refresh(&mut self) {
+    pub async fn apply_status_refresh(&mut self) {
         if !self
             .status_refresh_task
             .as_ref()
@@ -66,7 +65,7 @@ impl App {
         let Some(task) = self.status_refresh_task.take() else {
             return;
         };
-        let Ok(snapshot) = task.join() else {
+        let Ok(snapshot) = task.await else {
             return;
         };
         self.podman_available = snapshot.runtime_available;
@@ -166,7 +165,7 @@ impl App {
             let project = ComposeProject::new(service_name.clone());
             let service_name_for_status = service_name.clone();
 
-            thread::spawn(move || {
+            tokio::task::spawn_blocking(move || {
                 {
                     let mut logs_lock = logs.lock().unwrap();
                     logs_lock.clear();
@@ -335,7 +334,7 @@ impl App {
             let status = Arc::clone(&service.status);
             let project = ComposeProject::new(service_name.clone());
 
-            thread::spawn(move || {
+            tokio::task::spawn_blocking(move || {
                 let output_events = Arc::clone(&events);
                 let output_project = service_name.clone();
                 match run_stream_with_line_callback(

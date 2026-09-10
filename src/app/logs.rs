@@ -2,7 +2,6 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::thread;
 
 use crate::app::state::App;
 use crate::podman::compose::ComposeProject;
@@ -23,7 +22,7 @@ impl App {
         for service in &self.services {
             let service_name = service.name.clone();
             let logs = Arc::clone(&service.logs);
-            thread::spawn(move || {
+            tokio::task::spawn_blocking(move || {
                 let project = ComposeProject::new(service_name.clone());
                 if let Ok(output) = project.ps_output() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -115,7 +114,7 @@ impl App {
         if let Ok(mut child) = project.logs_follow() {
             if let Some(stdout) = child.stdout.take() {
                 *logs_child.lock().unwrap() = Some(child);
-                thread::spawn(move || {
+                tokio::task::spawn_blocking(move || {
                     let reader = BufReader::new(stdout);
                     for line in reader.lines().map_while(Result::ok) {
                         let mut logs = live_logs.lock().unwrap();

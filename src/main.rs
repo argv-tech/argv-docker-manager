@@ -42,8 +42,22 @@ fn install_panic_hook() {
     }));
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(async {
+        // Terminal input, rendering and legacy CLI calls are blocking. Keep the
+        // UI on the blocking pool so Tokio's async workers remain available.
+        tokio::task::spawn_blocking(|| tokio::runtime::Handle::current().block_on(run_app()))
+            .await?
+    });
+    // A stuck external command must not prevent the terminal app from exiting.
+    runtime.shutdown_timeout(Duration::from_secs(2));
+    result
+}
+
+async fn run_app() -> Result<()> {
     match command_mode()? {
         CommandMode::AutoRestart(project_root) => {
             auto_restart::start_configured_services(&project_root)?;
@@ -127,33 +141,34 @@ fn command_mode() -> Result<CommandMode> {
 }
 
 async fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
-    const FRAME_DURATION: Duration = Duration::from_millis(33);
-
     let keybinds = Keybinds::load();
     let mut app = App::new(keybinds);
     app.next();
 
+    let result = run_loop(&mut terminal, &mut app).await;
+    app.stop_event_listeners();
+    app.kill_all_live_logs();
+    result
+}
+
+async fn run_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
+    const FRAME_DURATION: Duration = Duration::from_millis(33);
     loop {
         let mut render_error: Option<io::Error> = None;
         terminal.draw(|frame| {
-            if let Err(err) = ui::render_ui(frame, &mut app) {
+            if let Err(err) = ui::render_ui(frame, app) {
                 render_error = Some(err);
             }
         })?;
 
         if let Some(err) = render_error {
-            app.stop_event_listeners();
-            app.kill_all_live_logs();
             return Err(err);
         }
 
-        if !event_handler::handle_events(&mut app, FRAME_DURATION).await? {
+        if !event_handler::handle_events(app, FRAME_DURATION).await? {
             break;
         }
     }
-
-    app.stop_event_listeners();
-    app.kill_all_live_logs();
 
     Ok(())
 }

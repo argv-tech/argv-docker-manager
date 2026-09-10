@@ -10,20 +10,66 @@ use crate::podman::events::{append_project_event, append_project_runtime_details
 use crate::podman::process::run_stream_with_line_callback;
 use crate::status::{Status, ToastState};
 
+#[derive(Default)]
+pub struct StatusSnapshot {
+    runtime_available: bool,
+    statuses: std::collections::HashMap<String, Status>,
+    observed: std::collections::HashMap<String, Status>,
+}
+
 impl App {
     pub fn refresh_statuses(&mut self) {
+        if self.status_refresh_task.is_some() {
+            return;
+        }
         const RUNTIME_PROBE_COOLDOWN_TICKS: u8 = 60;
 
         let should_probe_runtime = self.first_status_check
             || self.runtime_probe_cooldown_ticks == 0
             || !self.podman_available;
-        let runtime_available = if should_probe_runtime {
+        if should_probe_runtime {
             self.runtime_probe_cooldown_ticks = RUNTIME_PROBE_COOLDOWN_TICKS;
-            PodmanClient::podman_info_ok()
-        } else {
-            self.podman_available
+        }
+        let available = self.podman_available;
+        let observed: std::collections::HashMap<_, _> = self
+            .services
+            .iter()
+            .map(|service| (service.name.clone(), service.status()))
+            .collect();
+        self.status_refresh_task = Some(thread::spawn(move || {
+            let runtime_available = if should_probe_runtime {
+                PodmanClient::podman_info_ok()
+            } else {
+                available
+            };
+            let statuses = if runtime_available {
+                PodmanClient::get_batch_statuses(observed.keys().map(String::as_str))
+            } else {
+                Default::default()
+            };
+            StatusSnapshot {
+                runtime_available,
+                statuses,
+                observed,
+            }
+        }));
+    }
+
+    pub fn apply_status_refresh(&mut self) {
+        if !self
+            .status_refresh_task
+            .as_ref()
+            .is_some_and(|task| task.is_finished())
+        {
+            return;
+        }
+        let Some(task) = self.status_refresh_task.take() else {
+            return;
         };
-        self.podman_available = runtime_available;
+        let Ok(snapshot) = task.join() else {
+            return;
+        };
+        self.podman_available = snapshot.runtime_available;
 
         if !self.podman_available {
             self.stop_event_listeners();
@@ -32,13 +78,13 @@ impl App {
                 service.clear_pull_progress();
             }
         } else {
-            let batch_statuses = PodmanClient::get_batch_statuses(
-                self.services.iter().map(|service| service.name.as_str()),
-            );
-
             for service in &self.services {
-                if let Some(actual_status) = batch_statuses.get(&service.name).copied() {
+                if let Some(actual_status) = snapshot.statuses.get(&service.name).copied() {
                     let mut status_lock = service.status.lock().unwrap();
+                    // An action or event received during the query takes precedence.
+                    if snapshot.observed.get(&service.name) != Some(&*status_lock) {
+                        continue;
+                    }
                     match *status_lock {
                         Status::Pulling => {
                             if actual_status == Status::Running {

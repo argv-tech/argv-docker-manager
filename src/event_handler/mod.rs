@@ -29,15 +29,15 @@ pub async fn handle_events(app: &mut App, poll_timeout: Duration) -> io::Result<
             return Ok(false);
         }
     }
-    refresh_periodically(app);
+    refresh_periodically(app).await;
 
     update_toast_timer(app);
     app.sync_live_log_listener();
     Ok(true)
 }
 
-fn refresh_periodically(app: &mut App) {
-    app.apply_status_refresh();
+async fn refresh_periodically(app: &mut App) {
+    app.apply_status_refresh().await;
     if std::time::Instant::now() >= app.next_status_refresh {
         app.refresh_statuses();
         app.next_status_refresh = std::time::Instant::now() + Duration::from_secs(1);

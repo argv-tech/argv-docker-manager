@@ -42,7 +42,7 @@ pub fn spawn_projects_listener(
     let child = Arc::new(Mutex::new(None));
     let child_clone = Arc::clone(&child);
 
-    thread::spawn(move || {
+    tokio::task::spawn_blocking(move || {
         seed_initial_events(&project_targets);
 
         loop {

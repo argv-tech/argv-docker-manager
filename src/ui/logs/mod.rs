@@ -214,11 +214,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn navigation_does_not_wait_for_pending_status_refresh() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn navigation_does_not_wait_for_pending_status_refresh() {
         let mut app = test_app();
         let (release, wait) = std::sync::mpsc::channel::<()>();
-        app.status_refresh_task = Some(std::thread::spawn(move || {
+        app.status_refresh_task = Some(tokio::task::spawn_blocking(move || {
             let _ = wait.recv();
             Default::default()
         }));
@@ -226,14 +226,14 @@ mod tests {
         // The worker cannot finish until after navigation and result polling return.
         app.refresh_statuses();
         app.next();
-        app.apply_status_refresh();
+        app.apply_status_refresh().await;
         app.next();
         app.previous();
         assert_eq!(app.state.selected(), Some(0));
         assert!(!app.status_refresh_task.as_ref().unwrap().is_finished());
 
         release.send(()).unwrap();
-        assert!(app.status_refresh_task.take().unwrap().join().is_ok());
+        assert!(app.status_refresh_task.take().unwrap().await.is_ok());
     }
 
     #[test]

@@ -1,0 +1,21 @@
+---
+services:
+  pgvector:
+    image: pgvector/pgvector:pg18
+    container_name: postgres
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: postgres
+    volumes:
+      - ./db:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+
+  pgvector_adminer:
+    image: adminer
+    container_name: adminer
+    depends_on:
+      - postgres
+    ports:
+      - "5433:8080"

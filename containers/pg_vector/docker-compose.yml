@@ -16,6 +16,6 @@ services:
     image: adminer
     container_name: adminer
     depends_on:
-      - postgres
+      - pgvector
     ports:
       - "5433:8080"

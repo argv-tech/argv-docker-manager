@@ -1,7 +1,7 @@
 ---
 services:
   pgvector:
-    image: pgvector/pgvector:pg18
+    image: docker.io/pgvector/pgvector:pg18
     container_name: postgres
     environment:
       POSTGRES_USER: root
@@ -13,7 +13,7 @@ services:
       - "5432:5432"
 
   pgvector_adminer:
-    image: adminer
+    image: docker.io/library/adminer:latest
     container_name: adminer
     depends_on:
       - pgvector

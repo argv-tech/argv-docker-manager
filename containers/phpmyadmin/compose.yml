@@ -1,7 +1,7 @@
 ---
 services:
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin
+    image: docker.io/phpmyadmin/phpmyadmin:latest
     container_name: standalone_phpmyadmin
     environment:
       PMA_ARBITRARY: 1

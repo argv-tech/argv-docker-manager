@@ -31,7 +31,7 @@ pub fn status_color(status: &Status) -> Color {
         Status::Running => RUNNING,
         Status::Pulling => ACCENT,
         Status::Starting | Status::Stopping => TRANSITION,
-        Status::Error | Status::DaemonNotRunning => ERROR,
+        Status::Error | Status::RuntimeUnavailable => ERROR,
         Status::Stopped => TEXT,
     }
 }

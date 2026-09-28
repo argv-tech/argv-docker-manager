@@ -21,7 +21,11 @@ pub(super) fn logs_title(app: &App) -> Line<'static> {
         theme::MUTED
     };
 
-    let total = app.logs_render_cache.body_line_count;
+    let total = app
+        .logs_render_cache
+        .entry(app.state.selected(), app.log_tab)
+        .map(|cache| cache.body_line_count)
+        .unwrap_or(0);
     let position = if total == 0 {
         String::new()
     } else if app.log_auto_scroll {

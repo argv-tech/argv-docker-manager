@@ -1,21 +1,24 @@
 use std::collections::HashMap;
 use std::process::Command;
 
+use super::{
+    COMPOSE_PROJECT_LABEL, LEGACY_COMPOSE_PROJECT_LABEL, PODMAN_COMMAND, PODMAN_COMPOSE_COMMAND,
+};
 use crate::status::Status;
 
-pub struct DockerClient;
+pub struct PodmanClient;
 
-impl DockerClient {
-    pub fn docker_info_ok() -> bool {
-        Command::new("docker")
+impl PodmanClient {
+    pub fn podman_info_ok() -> bool {
+        Command::new(PODMAN_COMMAND)
             .arg("info")
             .output()
             .map(|out| out.status.success())
             .unwrap_or(false)
     }
 
-    pub fn docker_cli_ok() -> bool {
-        Command::new("docker")
+    pub fn podman_cli_ok() -> bool {
+        Command::new(PODMAN_COMMAND)
             .arg("--version")
             .output()
             .map(|out| out.status.success())
@@ -23,16 +26,15 @@ impl DockerClient {
     }
 
     pub fn compose_cli_ok() -> bool {
-        Command::new("docker")
-            .arg("compose")
-            .arg("version")
+        Command::new(PODMAN_COMPOSE_COMMAND)
+            .arg("--version")
             .output()
             .map(|out| out.status.success())
             .unwrap_or(false)
     }
 
     pub fn image_exists(image: &str) -> bool {
-        Command::new("docker")
+        Command::new(PODMAN_COMMAND)
             .arg("image")
             .arg("inspect")
             .arg(image)
@@ -42,33 +44,25 @@ impl DockerClient {
     }
 
     pub fn get_status(project: &str) -> Status {
-        match Command::new("docker")
+        match Command::new(PODMAN_COMMAND)
             .arg("ps")
-            .arg("--filter")
-            .arg(format!("label=com.docker.compose.project={}", project))
             .arg("--format")
-            .arg("{{.Names}}\t{{.Status}}")
+            .arg(format_status_template())
             .output()
         {
-            Ok(out) => {
+            Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
-                if stdout.trim().is_empty() {
-                    Status::Stopped
+                if stdout.lines().any(|line| {
+                    let (status, podman_project, legacy_project) = parse_status_line(line);
+                    status.starts_with("Up")
+                        && (podman_project == project || legacy_project == project)
+                }) {
+                    Status::Running
                 } else {
-                    let has_running = stdout.lines().any(|line| {
-                        line.split('\t')
-                            .nth(1)
-                            .map(|status| status.starts_with("Up"))
-                            .unwrap_or(false)
-                    });
-                    if has_running {
-                        Status::Running
-                    } else {
-                        Status::Stopped
-                    }
+                    Status::Stopped
                 }
             }
-            Err(_) => Status::Error,
+            Ok(_) | Err(_) => Status::Error,
         }
     }
 
@@ -91,21 +85,21 @@ impl DockerClient {
             return statuses;
         }
 
-        let cmd = Command::new("docker")
+        let cmd = Command::new(PODMAN_COMMAND)
             .arg("ps")
             .arg("-a")
             .arg("--format")
-            .arg("{{.Status}}\t{{.Label \"com.docker.compose.project\"}}")
+            .arg(format_status_template())
             .output();
 
         match cmd {
-            Ok(out) => {
+            Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 for line in stdout.lines() {
                     apply_batch_status_line(&mut statuses, line);
                 }
             }
-            Err(_) => {
+            Ok(_) | Err(_) => {
                 for status in statuses.values_mut() {
                     *status = Status::Error;
                 }
@@ -117,9 +111,12 @@ impl DockerClient {
 }
 
 fn apply_batch_status_line(statuses: &mut HashMap<String, Status>, line: &str) {
-    let mut parts = line.splitn(2, '\t');
-    let status_str = parts.next().unwrap_or_default();
-    let project_name = parts.next().unwrap_or_default();
+    let (status_str, podman_project, legacy_project) = parse_status_line(line);
+    let project_name = if !podman_project.is_empty() {
+        podman_project
+    } else {
+        legacy_project
+    };
 
     if status_str.starts_with("Up")
         && let Some(status) = statuses.get_mut(project_name)
@@ -127,6 +124,21 @@ fn apply_batch_status_line(statuses: &mut HashMap<String, Status>, line: &str) {
     {
         *status = Status::Running;
     }
+}
+
+fn format_status_template() -> String {
+    format!(
+        "{{{{.Status}}}}\t{{{{.Label \"{COMPOSE_PROJECT_LABEL}\"}}}}\t{{{{.Label \"{LEGACY_COMPOSE_PROJECT_LABEL}\"}}}}"
+    )
+}
+
+fn parse_status_line(line: &str) -> (&str, &str, &str) {
+    let mut parts = line.splitn(3, '\t');
+    (
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+        parts.next().unwrap_or_default(),
+    )
 }
 
 fn validate_service_name(name: &str) -> bool {
@@ -144,8 +156,8 @@ mod tests {
             ("redis".to_string(), Status::Stopped),
             ("mailpit".to_string(), Status::Stopped),
         ]);
-        apply_batch_status_line(&mut statuses, "Exited (0)\tredis");
-        apply_batch_status_line(&mut statuses, "Up 3 seconds\tredis");
+        apply_batch_status_line(&mut statuses, "Exited (0)\t\tredis");
+        apply_batch_status_line(&mut statuses, "Up 3 seconds\tredis\t");
 
         assert_eq!(statuses.get("redis"), Some(&Status::Running));
     }
@@ -153,8 +165,17 @@ mod tests {
     #[test]
     fn batch_status_parser_ignores_unknown_projects() {
         let mut statuses = HashMap::from([("redis".to_string(), Status::Stopped)]);
-        apply_batch_status_line(&mut statuses, "Up 3 seconds\tpostgres");
+        apply_batch_status_line(&mut statuses, "Up 3 seconds\tpostgres\t");
 
         assert_eq!(statuses.get("redis"), Some(&Status::Stopped));
+    }
+
+    #[test]
+    fn batch_status_parser_accepts_legacy_compose_project_labels() {
+        let mut statuses = HashMap::from([("redis".to_string(), Status::Stopped)]);
+
+        apply_batch_status_line(&mut statuses, "Up 3 seconds\t\tredis");
+
+        assert_eq!(statuses.get("redis"), Some(&Status::Running));
     }
 }

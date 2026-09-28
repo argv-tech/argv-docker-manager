@@ -27,7 +27,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let identity = Line::from(vec![
         Span::styled("◆", Style::new().fg(theme::BRAND)),
         Span::styled(
-            " ARGV  DOCKER MANAGER",
+            " ARGV  PODMAN MANAGER",
             Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
@@ -44,11 +44,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     ]);
 
     let health = Line::from(vec![
-        signal("DAEMON", app.docker_daemon_running),
+        signal("PODMAN", app.podman_available),
         Span::raw("  "),
-        signal("CLI", app.docker_command_available),
+        signal("CLI", app.podman_command_available),
         Span::raw("  "),
-        signal("COMPOSE", app.docker_compose_available),
+        signal("COMPOSE", app.podman_compose_available),
         Span::styled("  │  ", Style::new().fg(theme::MUTED)),
         Span::styled(
             format!("{running_services}/{} RUNNING", app.services.len()),

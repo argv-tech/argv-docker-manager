@@ -54,7 +54,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "ARGV Docker Manager ${{ github.ref_name }}"
+          name: "ARGV Podman Manager ${{ github.ref_name }}"
           body_path: RELEASE_NOTES.md
           prerelease: ${{ steps.version.outputs.hotfix }}
         env:

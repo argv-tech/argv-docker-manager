@@ -1,7 +1,7 @@
-use crate::app::{App, DaemonAction};
+use crate::app::App;
 
 pub(super) fn in_overlay_mode(app: &App) -> bool {
-    app.search_mode || app.daemon_start_mode || app.daemon_menu_mode
+    app.search_mode
 }
 
 pub(super) fn select_searched_service(app: &mut App) {
@@ -13,20 +13,4 @@ pub(super) fn select_searched_service(app: &mut App) {
     {
         app.state.select(Some(index));
     }
-}
-
-pub(super) fn daemon_next(app: &mut App) {
-    app.daemon_action_selected = match app.daemon_action_selected {
-        DaemonAction::Start => DaemonAction::Stop,
-        DaemonAction::Stop => DaemonAction::Restart,
-        DaemonAction::Restart => DaemonAction::Start,
-    };
-}
-
-pub(super) fn daemon_previous(app: &mut App) {
-    app.daemon_action_selected = match app.daemon_action_selected {
-        DaemonAction::Start => DaemonAction::Restart,
-        DaemonAction::Stop => DaemonAction::Start,
-        DaemonAction::Restart => DaemonAction::Stop,
-    };
 }

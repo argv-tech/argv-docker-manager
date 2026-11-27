@@ -18,7 +18,12 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         " ACTIVITY "
     };
-    let controls = Paragraph::new(controls_line(app)).block(
+    let line = if area.width < 100 {
+        compact_controls_line(app)
+    } else {
+        controls_line(app)
+    };
+    let controls = Paragraph::new(line).block(
         Block::new()
             .borders(Borders::TOP)
             .border_style(Style::new().fg(theme::MUTED))
@@ -35,6 +40,31 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     );
 
     frame.render_widget(controls, area);
+}
+
+fn compact_controls_line(app: &App) -> Line<'static> {
+    if app.search_mode {
+        return command_line([
+            ("Enter".to_string(), "select"),
+            ("Esc".to_string(), "cancel"),
+        ]);
+    }
+    let keys = &app.keybinds.app;
+    if app.focus == Focus::Services {
+        command_line([
+            (app.keybinds.services.toggle.clone(), "start/stop"),
+            (keys.search.clone(), "filter"),
+            (keys.focus_logs.clone(), "logs"),
+            (keys.quit.clone(), "quit"),
+        ])
+    } else {
+        command_line([
+            (app.keybinds.logs.toggle_auto_scroll.clone(), "auto-scroll"),
+            (keys.focus_services.clone(), "services"),
+            (keys.refresh.clone(), "refresh"),
+            (keys.quit.clone(), "quit"),
+        ])
+    }
 }
 
 fn controls_line(app: &App) -> Line<'static> {

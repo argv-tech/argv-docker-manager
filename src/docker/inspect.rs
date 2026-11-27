@@ -1,4 +1,4 @@
-use std::process::Command;
+use crate::config::Runtime;
 
 const PROJECT_TEMPLATE: &str = "{{index .Config.Labels \"com.docker.compose.project\"}}";
 const RUNTIME_TEMPLATE: &str = concat!(
@@ -23,18 +23,19 @@ impl Default for ContainerRuntimeDetails {
     }
 }
 
-pub fn project_name(container_name: &str) -> Option<String> {
-    inspect_value(container_name, PROJECT_TEMPLATE)
+pub fn project_name(runtime: Runtime, container_name: &str) -> Option<String> {
+    inspect_value(runtime, container_name, PROJECT_TEMPLATE)
 }
 
-pub fn runtime_details(container_name: &str) -> ContainerRuntimeDetails {
-    inspect_value(container_name, RUNTIME_TEMPLATE)
+pub fn runtime_details(runtime: Runtime, container_name: &str) -> ContainerRuntimeDetails {
+    inspect_value(runtime, container_name, RUNTIME_TEMPLATE)
         .map(|value| parse_runtime_details(&value))
         .unwrap_or_default()
 }
 
-pub fn project_containers(project: &str) -> Vec<String> {
-    let output = Command::new("docker")
+pub fn project_containers(runtime: Runtime, project: &str) -> Vec<String> {
+    let output = runtime
+        .command()
         .arg("ps")
         .arg("--filter")
         .arg(format!("label=com.docker.compose.project={project}"))
@@ -53,8 +54,9 @@ pub fn project_containers(project: &str) -> Vec<String> {
     }
 }
 
-fn inspect_value(container_name: &str, template: &str) -> Option<String> {
-    let output = Command::new("docker")
+fn inspect_value(runtime: Runtime, container_name: &str, template: &str) -> Option<String> {
+    let output = runtime
+        .command()
         .arg("inspect")
         .arg("--format")
         .arg(template)

@@ -3,6 +3,6 @@ target/
 /containers/mailpit/data
 .docker-manager-autorestart.toml
 .docker-manager-autorestart.toml.tmp
-.argv-docker-manager-autorestart.toml
-.argv-docker-manager-autorestart.toml.tmp
+.argv-container-manager-autorestart.toml
+.argv-container-manager-autorestart.toml.tmp
 /.opencode/plans

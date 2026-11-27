@@ -1,29 +1,32 @@
 use std::collections::HashMap;
-use std::process::Command;
 
+use crate::config::Runtime;
 use crate::status::Status;
 
 pub struct DockerClient;
 
 impl DockerClient {
-    pub fn docker_info_ok() -> bool {
-        Command::new("docker")
+    pub fn docker_info_ok(runtime: Runtime) -> bool {
+        runtime
+            .command()
             .arg("info")
             .output()
             .map(|out| out.status.success())
             .unwrap_or(false)
     }
 
-    pub fn docker_cli_ok() -> bool {
-        Command::new("docker")
+    pub fn docker_cli_ok(runtime: Runtime) -> bool {
+        runtime
+            .command()
             .arg("--version")
             .output()
             .map(|out| out.status.success())
             .unwrap_or(false)
     }
 
-    pub fn compose_cli_ok() -> bool {
-        Command::new("docker")
+    pub fn compose_cli_ok(runtime: Runtime) -> bool {
+        runtime
+            .command()
             .arg("compose")
             .arg("version")
             .output()
@@ -31,8 +34,9 @@ impl DockerClient {
             .unwrap_or(false)
     }
 
-    pub fn image_exists(image: &str) -> bool {
-        Command::new("docker")
+    pub fn image_exists(runtime: Runtime, image: &str) -> bool {
+        runtime
+            .command()
             .arg("image")
             .arg("inspect")
             .arg(image)
@@ -41,8 +45,9 @@ impl DockerClient {
             .unwrap_or(false)
     }
 
-    pub fn get_status(project: &str) -> Status {
-        match Command::new("docker")
+    pub fn get_status(runtime: Runtime, project: &str) -> Status {
+        match runtime
+            .command()
             .arg("ps")
             .arg("--filter")
             .arg(format!("label=com.docker.compose.project={}", project))
@@ -73,6 +78,7 @@ impl DockerClient {
     }
 
     pub fn get_batch_statuses<'a>(
+        runtime: Runtime,
         service_names: impl IntoIterator<Item = &'a str>,
     ) -> HashMap<String, Status> {
         let mut statuses: HashMap<String, Status> = service_names
@@ -91,7 +97,8 @@ impl DockerClient {
             return statuses;
         }
 
-        let cmd = Command::new("docker")
+        let cmd = runtime
+            .command()
             .arg("ps")
             .arg("-a")
             .arg("--format")

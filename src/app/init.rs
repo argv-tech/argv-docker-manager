@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::app::state::{App, DaemonAction, Focus, LogTab};
 use crate::auto_restart::AutoRestartConfig;
-use crate::config::Keybinds;
+use crate::config::{Keybinds, Settings};
 use crate::docker::client::DockerClient;
 use crate::service::Service;
 use crate::status::ToastState;
@@ -11,14 +11,16 @@ impl App {
     pub fn new(keybinds: Keybinds) -> Self {
         let project_root = std::env::current_dir().unwrap_or_else(|_| ".".into());
         let service_names = get_service_names(&project_root);
+        let settings = Settings::load(&project_root.join("config.toml"));
+        let runtime = settings.general.runtime;
         let (auto_restart, auto_restart_error) = match AutoRestartConfig::load(&project_root) {
             Ok(config) => (config, None),
             Err(error) => (AutoRestartConfig::default(), Some(error.to_string())),
         };
 
-        let docker_running = DockerClient::docker_info_ok();
-        let docker_command_available = DockerClient::docker_cli_ok();
-        let docker_compose_available = DockerClient::compose_cli_ok();
+        let docker_running = DockerClient::docker_info_ok(runtime);
+        let docker_command_available = DockerClient::docker_cli_ok(runtime);
+        let docker_compose_available = DockerClient::compose_cli_ok(runtime);
 
         let (toast, toast_timer) = if let Some(error) = auto_restart_error {
             (
@@ -32,7 +34,10 @@ impl App {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Error,
-                    message: "Docker Compose not found. Services may not work.".to_string(),
+                    message: format!(
+                        "{} Compose not found. Services may not work.",
+                        runtime.name()
+                    ),
                 }),
                 5,
             )
@@ -40,7 +45,7 @@ impl App {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Error,
-                    message: "Docker CLI not found.".to_string(),
+                    message: format!("{} CLI not found.", runtime.name()),
                 }),
                 5,
             )
@@ -48,7 +53,7 @@ impl App {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Warning,
-                    message: "Docker daemon not running.".to_string(),
+                    message: format!("{} runtime not responding.", runtime.name()),
                 }),
                 4,
             )
@@ -56,7 +61,7 @@ impl App {
             (
                 Some(crate::toast::Toast {
                     state: ToastState::Info,
-                    message: "ARGV Docker Manager is ready".to_string(),
+                    message: format!("Container Manager is ready ({})", runtime.name()),
                 }),
                 3,
             )
@@ -92,6 +97,9 @@ impl App {
             toast_tick_accumulator: 0,
             logs_render_cache: Default::default(),
             keybinds,
+            runtime,
+            settings,
+            settings_mode: false,
         };
         app.refresh_statuses();
         app.populate_initial_logs();

@@ -14,6 +14,7 @@ pub(super) struct Keys {
     pub log_auto_scroll: char,
     pub auto_restart: char,
     pub refresh: char,
+    pub settings: char,
 }
 
 impl Keys {
@@ -62,6 +63,7 @@ impl Keys {
                 .next()
                 .unwrap_or('a'),
             refresh: app.keybinds.app.refresh.chars().next().unwrap_or('r'),
+            settings: 'm',
         }
     }
 }

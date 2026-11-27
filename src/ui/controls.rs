@@ -87,6 +87,7 @@ fn controls_line(app: &App) -> Line<'static> {
             (navigation_key, "move"),
             (app_keys.focus_logs.clone(), "activity"),
             (app_keys.daemon_menu.clone(), "daemon"),
+            ("m".to_string(), "settings"),
             (app_keys.quit.clone(), "quit"),
         ])
     } else {
@@ -99,6 +100,7 @@ fn controls_line(app: &App) -> Line<'static> {
             (navigation_key, "scroll"),
             (app_keys.focus_services.clone(), "services"),
             (app_keys.refresh.clone(), "refresh"),
+            ("m".to_string(), "settings"),
             (app_keys.quit.clone(), "quit"),
         ])
     }

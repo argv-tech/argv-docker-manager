@@ -1,6 +1,71 @@
 use std::fs;
 
 use serde::Deserialize;
+use serde::{Serialize, Serializer};
+use std::path::Path;
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Runtime {
+    #[default]
+    Docker,
+    Podman,
+}
+
+impl Runtime {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Docker => "docker",
+            Self::Podman => "podman",
+        }
+    }
+
+    pub fn command(self) -> std::process::Command {
+        std::process::Command::new(self.name())
+    }
+
+    pub fn daemon_service_active(self) -> bool {
+        match self {
+            Self::Docker => crate::docker::daemon::docker_service_active(),
+            Self::Podman => true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+pub struct Settings {
+    #[serde(default)]
+    pub general: GeneralSettings,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+pub struct GeneralSettings {
+    #[serde(default)]
+    pub runtime: Runtime,
+}
+
+impl Serialize for Runtime {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.name())
+    }
+}
+
+impl Settings {
+    pub fn load(path: &Path) -> Self {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|content| toml::from_str(&content).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        let content = toml::to_string_pretty(self).expect("settings serialize");
+        std::fs::write(path, content)
+    }
+}
 
 #[derive(Deserialize, Debug)]
 pub struct Keybinds {

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use ratatui::text::Text;
 
 use crate::auto_restart::AutoRestartConfig;
-use crate::config::Keybinds;
+use crate::config::{Keybinds, Runtime, Settings};
 use crate::docker::events::EventListenerHandle;
 use crate::service::Service;
 use crate::status::ToastState;
@@ -81,6 +81,9 @@ pub struct App {
     pub toast_tick_accumulator: u8,
     pub logs_render_cache: LogsRenderCache,
     pub keybinds: Keybinds,
+    pub runtime: Runtime,
+    pub settings: Settings,
+    pub settings_mode: bool,
 }
 
 impl App {

@@ -7,10 +7,14 @@ use ratatui::{
 };
 
 use crate::app::{App, DaemonAction};
+use crate::config::Runtime;
 
 use super::theme;
 
 pub fn render(frame: &mut Frame, app: &App) {
+    if app.settings_mode {
+        render_settings(frame, app);
+    }
     if app.daemon_menu_mode {
         render_daemon_menu(frame, app);
     }
@@ -37,6 +41,53 @@ pub fn render(frame: &mut Frame, app: &App) {
             );
         }
     }
+}
+
+fn render_settings(frame: &mut Frame, app: &App) {
+    let area = centered_rect(60, 11, frame.area());
+    frame.render_widget(Clear, area);
+    let popup = theme::panel(
+        Line::from(Span::styled(
+            " SETTINGS ",
+            Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+        )),
+        true,
+    );
+    let inner = popup.inner(area);
+    frame.render_widget(popup, area);
+    let [setting, config, hints] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(2),
+        Constraint::Length(2),
+    ])
+    .areas(inner);
+
+    let runtime = match app.settings.general.runtime {
+        Runtime::Docker => "Docker",
+        Runtime::Podman => "Podman",
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Runtime  ", Style::new().fg(Color::Gray)),
+            Span::styled(
+                format!("‹ {runtime} ›"),
+                Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ),
+        ]))
+        .block(theme::panel(Line::from(" GENERAL "), false)),
+        setting,
+    );
+    frame.render_widget(
+        Paragraph::new("Saved to ./config.toml".to_string())
+            .style(Style::new().fg(Color::DarkGray)),
+        config,
+    );
+    frame.render_widget(
+        Paragraph::new("Tab/←/→: change runtime   Enter: save   Esc: close")
+            .alignment(Alignment::Left)
+            .style(Style::new().fg(Color::DarkGray)),
+        hints,
+    );
 }
 
 fn render_daemon_menu(frame: &mut Frame, app: &App) {

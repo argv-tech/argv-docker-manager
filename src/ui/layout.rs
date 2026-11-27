@@ -16,12 +16,15 @@ pub fn build(area: Rect, show_search: bool) -> Sections {
         area
     };
 
-    let [status_bar, content, controls] = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Min(0),
-        Constraint::Length(2),
-    ])
-    .areas(outer);
+    let (status_bar, content, controls) = if outer.height < 7 {
+        let [status, content] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(outer);
+        (status, content, Rect::default())
+    } else {
+        let [status, content, controls] = Layout::vertical([
+            Constraint::Length(3), Constraint::Min(1), Constraint::Length(2),
+        ]).areas(outer);
+        (status, content, controls)
+    };
 
     let (services, separator, logs) = content_areas(content);
 

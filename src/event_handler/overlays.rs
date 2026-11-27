@@ -1,7 +1,7 @@
 use crate::app::{App, DaemonAction};
 
 pub(super) fn in_overlay_mode(app: &App) -> bool {
-    app.search_mode || app.daemon_start_mode || app.daemon_menu_mode
+    app.search_mode || app.daemon_start_mode || app.daemon_menu_mode || app.settings_mode
 }
 
 pub(super) fn select_searched_service(app: &mut App) {

@@ -67,7 +67,7 @@ impl App {
         services_to_stop.sort();
 
         for service_name in services_to_stop {
-            let project = ComposeProject::new(service_name.clone());
+            let project = ComposeProject::new(service_name.clone(), self.runtime);
             let cmd = project.down_cmd();
             match run_capture(cmd) {
                 Ok(out) => {

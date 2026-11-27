@@ -1,8 +1,9 @@
 use std::fs;
 
+use crate::config::Runtime;
 use crate::docker::client::DockerClient;
 
-pub fn all_images_cached(service_name: &str) -> bool {
+pub fn all_images_cached(runtime: Runtime, service_name: &str) -> bool {
     let compose_path = format!("containers/{}/docker-compose.yml", service_name);
     let Ok(content) = fs::read_to_string(compose_path) else {
         return false;
@@ -21,7 +22,7 @@ pub fn all_images_cached(service_name: &str) -> bool {
         service_def
             .get("image")
             .and_then(|image| image.as_str())
-            .map(DockerClient::image_exists)
+            .map(|image| DockerClient::image_exists(runtime, image))
             .unwrap_or(true)
     })
 }

@@ -27,7 +27,7 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     let identity = Line::from(vec![
         Span::styled("◆", Style::new().fg(theme::BRAND)),
         Span::styled(
-            " ARGV  DOCKER MANAGER",
+            " CONTAINER MANAGER",
             Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
@@ -44,7 +44,11 @@ pub fn render(frame: &mut Frame, app: &App, area: Rect) {
     ]);
 
     let health = Line::from(vec![
-        signal("DAEMON", app.docker_daemon_running),
+        Span::styled(
+            format!("{} ", app.runtime.name().to_uppercase()),
+            Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+        ),
+        signal("RUNTIME", app.docker_daemon_running),
         Span::raw("  "),
         signal("CLI", app.docker_command_available),
         Span::raw("  "),

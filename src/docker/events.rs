@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use crate::config::Runtime;
 use crate::docker::inspect;
 use crate::service::{LogBuffer, SharedLogBuffer};
 use crate::status::Status;
@@ -28,20 +29,21 @@ impl EventListenerHandle {
 }
 
 pub fn spawn_projects_listener(
+    runtime: Runtime,
     project_targets: HashMap<String, ProjectEventTargets>,
 ) -> EventListenerHandle {
     let shutdown = Arc::new(AtomicBool::new(false));
     let shutdown_clone = Arc::clone(&shutdown);
 
     thread::spawn(move || {
-        seed_initial_events(&project_targets);
+        seed_initial_events(runtime, &project_targets);
 
         loop {
             if shutdown_clone.load(Ordering::Relaxed) {
                 break;
             }
 
-            let mut cmd = std::process::Command::new("docker");
+            let mut cmd = runtime.command();
             cmd.arg("events")
                 .arg("--filter")
                 .arg("type=container")
@@ -64,7 +66,7 @@ pub fn spawn_projects_listener(
                                 let _ = child.wait();
                                 break;
                             }
-                            handle_event_line(&line, &project_targets);
+                            handle_event_line(runtime, &line, &project_targets);
                         }
                     }
                     let _ = child.wait();
@@ -85,9 +87,9 @@ pub fn spawn_projects_listener(
     EventListenerHandle { shutdown }
 }
 
-fn seed_initial_events(project_targets: &HashMap<String, ProjectEventTargets>) {
+fn seed_initial_events(runtime: Runtime, project_targets: &HashMap<String, ProjectEventTargets>) {
     for (project, target) in project_targets {
-        append_running_snapshot(&target.events, project);
+        append_running_snapshot(runtime, &target.events, project);
     }
 }
 
@@ -95,20 +97,24 @@ pub fn append_project_event(logs: &SharedLogBuffer, project: &str, action: &str)
     append_event_log(logs, project, "", action);
 }
 
-pub fn append_running_snapshot(logs: &SharedLogBuffer, project: &str) {
-    for container_name in inspect::project_containers(project) {
+pub fn append_running_snapshot(runtime: Runtime, logs: &SharedLogBuffer, project: &str) {
+    for container_name in inspect::project_containers(runtime, project) {
         append_event_log(logs, project, &container_name, "running (snapshot)");
-        append_runtime_details(logs, &container_name);
+        append_runtime_details(runtime, logs, &container_name);
     }
 }
 
-pub fn append_project_runtime_details(logs: &SharedLogBuffer, project: &str) {
-    for container_name in inspect::project_containers(project) {
-        append_runtime_details(logs, &container_name);
+pub fn append_project_runtime_details(runtime: Runtime, logs: &SharedLogBuffer, project: &str) {
+    for container_name in inspect::project_containers(runtime, project) {
+        append_runtime_details(runtime, logs, &container_name);
     }
 }
 
-fn handle_event_line(line: &str, project_targets: &HashMap<String, ProjectEventTargets>) {
+fn handle_event_line(
+    runtime: Runtime,
+    line: &str,
+    project_targets: &HashMap<String, ProjectEventTargets>,
+) {
     let mut parts = line.splitn(4, '\t');
     let action = parts.next().unwrap_or("").trim();
     let project = normalize_template_value(parts.next().unwrap_or("").trim());
@@ -120,7 +126,7 @@ fn handle_event_line(line: &str, project_targets: &HashMap<String, ProjectEventT
     }
 
     let project = if project.is_empty() {
-        resolve_project_from_container(container_name).unwrap_or_default()
+        resolve_project_from_container(runtime, container_name).unwrap_or_default()
     } else {
         project
     };
@@ -132,7 +138,7 @@ fn handle_event_line(line: &str, project_targets: &HashMap<String, ProjectEventT
     if let Some(target) = project_targets.get(&project) {
         append_event_log(&target.events, &project, container_name, action);
         if matches!(action, "start" | "restart" | "unpause") {
-            append_runtime_details(&target.events, container_name);
+            append_runtime_details(runtime, &target.events, container_name);
         }
 
         let mut status = target.status.lock().unwrap();
@@ -181,20 +187,20 @@ fn normalize_template_value(value: &str) -> String {
     }
 }
 
-fn resolve_project_from_container(container_name: &str) -> Option<String> {
+fn resolve_project_from_container(runtime: Runtime, container_name: &str) -> Option<String> {
     if container_name.is_empty() {
         return None;
     }
 
-    inspect::project_name(container_name)
+    inspect::project_name(runtime, container_name)
 }
 
-fn append_runtime_details(logs: &SharedLogBuffer, container_name: &str) {
+fn append_runtime_details(runtime: Runtime, logs: &SharedLogBuffer, container_name: &str) {
     if container_name.is_empty() {
         return;
     }
 
-    let details = inspect::runtime_details(container_name);
+    let details = inspect::runtime_details(runtime, container_name);
 
     let mut logs_lock = logs.lock().unwrap();
     logs_lock.push_str(&format!(
@@ -270,7 +276,7 @@ mod tests {
             },
         );
 
-        handle_event_line("stop\tmailpit\tmailpit-1\t0", &targets);
+        handle_event_line(Runtime::Docker, "stop\tmailpit\tmailpit-1\t0", &targets);
 
         assert!(matches!(*status.lock().unwrap(), Status::Stopped));
         assert!(pull_progress.lock().unwrap().is_none());

@@ -17,11 +17,12 @@ impl App {
         if !self.docker_daemon_running {
             return;
         }
+        let runtime = self.runtime;
         for service in &self.services {
             let service_name = service.name.clone();
             let logs = Arc::clone(&service.logs);
             thread::spawn(move || {
-                let project = ComposeProject::new(service_name.clone());
+                let project = ComposeProject::new(service_name.clone(), runtime);
                 if let Ok(output) = project.ps_output() {
                     let stdout = String::from_utf8_lossy(&output.stdout);
                     if stdout.contains("Up") {
@@ -77,7 +78,7 @@ impl App {
             return;
         }
 
-        let project = ComposeProject::new(service.name.clone());
+        let project = ComposeProject::new(service.name.clone(), self.runtime);
         let live_logs = Arc::clone(&service.live_logs);
         let logs_child = Arc::clone(&service.logs_child);
 

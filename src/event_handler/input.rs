@@ -1,6 +1,7 @@
 use ratatui::crossterm::event::KeyCode;
 
 use crate::app::{App, Focus, LogTab};
+use crate::config::Runtime;
 use crate::status::{Status, ToastState};
 
 use super::keys::Keys;
@@ -21,19 +22,38 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
     }
 
     if matches!(code, KeyCode::Char(c) if c == keys.daemon) && !in_overlay_mode(app) {
-        app.daemon_menu_mode = true;
-        app.daemon_action_selected = crate::app::DaemonAction::Start;
+        if app.runtime == Runtime::Podman {
+            app.set_toast(
+                ToastState::Info,
+                "Podman runtime is managed without a system daemon",
+                4,
+            );
+        } else {
+            app.daemon_menu_mode = true;
+            app.daemon_action_selected = crate::app::DaemonAction::Start;
+        }
+        return true;
+    }
+
+    if matches!(code, KeyCode::Char(c) if c == keys.settings) && !in_overlay_mode(app) {
+        app.settings_mode = true;
         return true;
     }
 
     match code {
         KeyCode::Esc => {
             if in_overlay_mode(app) {
+                let was_settings = app.settings_mode;
                 app.search_mode = false;
                 app.daemon_start_mode = false;
                 app.daemon_menu_mode = false;
+                app.settings_mode = false;
                 app.search_query.clear();
                 app.password_input.clear();
+                if was_settings {
+                    app.settings =
+                        crate::config::Settings::load(&app.project_root.join("config.toml"));
+                }
             }
         }
         KeyCode::Enter => {
@@ -47,6 +67,8 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
                 app.password_input.clear();
             } else if app.daemon_start_mode {
                 app.execute_daemon_action();
+            } else if app.settings_mode {
+                app.save_settings();
             }
         }
         _ if app.search_mode => match code {
@@ -57,9 +79,9 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
             _ => {}
         },
         _ if app.daemon_menu_mode => match code {
-            KeyCode::Char(c) if c == keys.scroll_down => daemon_next(app),
+            _ if is_nav_key(code, keys.scroll_down, 'j') => daemon_next(app),
             KeyCode::Down => daemon_next(app),
-            KeyCode::Char(c) if c == keys.scroll_up => daemon_previous(app),
+            _ if is_nav_key(code, keys.scroll_up, 'k') => daemon_previous(app),
             KeyCode::Up => daemon_previous(app),
             _ => {}
         },
@@ -70,19 +92,43 @@ pub(super) fn handle_key(app: &mut App, code: KeyCode, keys: &Keys) -> bool {
             }
             _ => {}
         },
+        _ if app.settings_mode => match code {
+            KeyCode::Char(c) if c == keys.quit => {
+                app.settings_mode = false;
+                app.settings = crate::config::Settings::load(&app.project_root.join("config.toml"));
+            }
+            KeyCode::Tab | KeyCode::Left | KeyCode::Right => {
+                cycle_runtime(app);
+            }
+            _ if is_nav_key(code, keys.focus_services, 'h')
+                || is_nav_key(code, keys.focus_logs, 'l') =>
+            {
+                cycle_runtime(app);
+            }
+            _ => {}
+        },
         _ => handle_normal_mode(app, code, keys),
     }
 
     true
 }
 
+fn cycle_runtime(app: &mut App) {
+    app.settings.general.runtime = match app.settings.general.runtime {
+        Runtime::Docker => Runtime::Podman,
+        Runtime::Podman => Runtime::Docker,
+    };
+}
+
 fn handle_normal_mode(app: &mut App, code: KeyCode, keys: &Keys) {
     match code {
-        KeyCode::Char(c) if c == keys.focus_services => app.focus = Focus::Services,
-        KeyCode::Char(c) if c == keys.focus_logs => app.focus = Focus::Logs,
-        KeyCode::Char(c) if c == keys.scroll_down => move_down(app),
+        _ if is_nav_key(code, keys.focus_services, 'h') => app.focus = Focus::Services,
+        _ if is_nav_key(code, keys.focus_logs, 'l') => app.focus = Focus::Logs,
+        KeyCode::Left => app.focus = Focus::Services,
+        KeyCode::Right => app.focus = Focus::Logs,
+        _ if is_nav_key(code, keys.scroll_down, 'j') => move_down(app),
         KeyCode::Down => move_down(app),
-        KeyCode::Char(c) if c == keys.scroll_up => move_up(app),
+        _ if is_nav_key(code, keys.scroll_up, 'k') => move_up(app),
         KeyCode::Up => move_up(app),
         KeyCode::PageDown if app.focus == Focus::Logs => scroll_logs(app, 10),
         KeyCode::PageUp if app.focus == Focus::Logs => scroll_logs(app, -10),
@@ -119,6 +165,10 @@ fn handle_normal_mode(app: &mut App, code: KeyCode, keys: &Keys) {
         KeyCode::Char(c) if c == keys.switch_tab_right => toggle_log_tab(app),
         _ => {}
     }
+}
+
+fn is_nav_key(code: KeyCode, configured: char, default: char) -> bool {
+    matches!(code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&configured) || c.eq_ignore_ascii_case(&default))
 }
 
 fn selected_service_transitioning(app: &App) -> bool {

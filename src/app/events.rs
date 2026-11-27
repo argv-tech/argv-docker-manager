@@ -25,7 +25,7 @@ impl App {
             );
         }
 
-        self.event_listener_handle = Some(spawn_projects_listener(project_targets));
+        self.event_listener_handle = Some(spawn_projects_listener(self.runtime, project_targets));
         self.event_listener_running = true;
 
         for service in &self.services {

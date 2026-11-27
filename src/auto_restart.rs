@@ -1,16 +1,17 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::config::{Runtime, Settings};
 use crate::docker::compose::ComposeProject;
 
-const CONFIG_FILE: &str = ".argv-docker-manager-autorestart.toml";
-const LEGACY_CONFIG_FILE: &str = ".docker-manager-autorestart.toml";
+const CONFIG_FILE: &str = ".argv-container-manager-autorestart.toml";
+const LEGACY_CONFIG_FILE: &str = ".argv-docker-manager-autorestart.toml";
+const OLDER_CONFIG_FILE: &str = ".docker-manager-autorestart.toml";
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AutoRestartConfig {
@@ -28,7 +29,18 @@ impl AutoRestartConfig {
                 match fs::read_to_string(&legacy_path) {
                     Ok(content) => (legacy_path, content),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        return Ok(Self::default());
+                        let older_path = project_root.join(OLDER_CONFIG_FILE);
+                        match fs::read_to_string(&older_path) {
+                            Ok(content) => (older_path, content),
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                                return Ok(Self::default());
+                            }
+                            Err(error) => {
+                                return Err(error).with_context(|| {
+                                    format!("failed to read {}", older_path.display())
+                                });
+                            }
+                        }
                     }
                     Err(error) => {
                         return Err(error)
@@ -93,14 +105,17 @@ pub fn start_configured_services(project_root: &Path) -> Result<()> {
         return Ok(());
     }
 
-    eprintln!("waiting for Docker daemon...");
-    wait_for_docker()?;
+    let runtime = Settings::load(&project_root.join("config.toml"))
+        .general
+        .runtime;
+    eprintln!("waiting for {} runtime...", runtime.name());
+    wait_for_runtime(runtime)?;
 
     let mut failures = Vec::new();
 
     for service_name in config.services() {
         eprintln!("starting {service_name}...");
-        if let Err(error) = start_service(&project_root, service_name) {
+        if let Err(error) = start_service(&project_root, service_name, runtime) {
             eprintln!("failed to start {service_name}: {error}");
             failures.push(error.to_string());
         }
@@ -113,12 +128,13 @@ pub fn start_configured_services(project_root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn wait_for_docker() -> Result<()> {
+fn wait_for_runtime(runtime: Runtime) -> Result<()> {
     const MAX_ATTEMPTS: u32 = 30;
     const RETRY_DELAY: Duration = Duration::from_secs(2);
 
     for attempt in 1..=MAX_ATTEMPTS {
-        let status = Command::new("docker")
+        let status = runtime
+            .command()
             .args(["info"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -126,13 +142,14 @@ fn wait_for_docker() -> Result<()> {
 
         match status {
             Ok(s) if s.success() => {
-                eprintln!("Docker daemon is ready");
+                eprintln!("{} runtime is ready", runtime.name());
                 return Ok(());
             }
             _ => {
                 if attempt < MAX_ATTEMPTS {
                     eprintln!(
-                        "Docker not ready, retrying in {RETRY_DELAY:?} ({attempt}/{MAX_ATTEMPTS})"
+                        "{} not ready, retrying in {RETRY_DELAY:?} ({attempt}/{MAX_ATTEMPTS})",
+                        runtime.name()
                     );
                     std::thread::sleep(RETRY_DELAY);
                 }
@@ -140,7 +157,10 @@ fn wait_for_docker() -> Result<()> {
         }
     }
 
-    bail!("Docker daemon did not become ready after {MAX_ATTEMPTS} attempts");
+    bail!(
+        "{} runtime did not become ready after {MAX_ATTEMPTS} attempts",
+        runtime.name()
+    );
 }
 
 pub fn config_path(project_root: &Path) -> PathBuf {
@@ -175,9 +195,9 @@ fn validate_service(project_root: &Path, service_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn start_service(project_root: &Path, service_name: &str) -> Result<()> {
+fn start_service(project_root: &Path, service_name: &str, runtime: Runtime) -> Result<()> {
     validate_service(project_root, service_name)?;
-    let child = ComposeProject::at(project_root, service_name)
+    let child = ComposeProject::at(project_root, service_name, runtime)
         .up_detached_cmd()
         .spawn()
         .with_context(|| format!("failed to start compose project {service_name}"))?;
@@ -192,7 +212,10 @@ mod tests {
     use super::*;
 
     fn temporary_project(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("argv-docker-manager-{name}-{}", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "argv-container-manager-{name}-{}",
+            std::process::id()
+        ))
     }
 
     #[test]
